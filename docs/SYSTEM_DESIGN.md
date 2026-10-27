@@ -48,6 +48,17 @@ Admin ใส่ได้ 2 รูปแบบ ระบบแปลงเป็�
 ```
 > ลิงก์แบบมีรหัสผ่านอาจ resolve ผ่าน `/shares` ไม่ได้แม้ใช้ token ขององค์กร **ต้องทดสอบใน Phase 0** — ถ้าไม่ได้ ใช้รูปแบบที่ 2 (ทราบได้จาก URL: owner = `supansa_daihen_co_th` → `supansa@daihen.co.th`)
 
+### 1.3 ทางเลือกที่ไม่ต้องพึ่ง IT: โฟลเดอร์ Google Drive ✅ ทำแล้ว
+ถ้าใส่ลิงก์โฟลเดอร์ Google Drive แทนลิงก์ OneDrive ระบบจะอ่านไฟล์จาก Google Drive ด้วยสิทธิ์ของบัญชีที่ติดตั้ง Script (Drive API) — ไม่ต้องลงทะเบียน App และไม่ใช้ Microsoft API เลย ส่วนแตกข้อความ, index และหน้าเว็บใช้ร่วมกันทั้งหมด (`gas/Source.js` คืนรายการไฟล์รูปแบบเดียวกันจากทั้งสองแหล่ง)
+
+| | Google Drive | OneDrive |
+|---|---|---|
+| รายการไฟล์ | `Drive.Files.list` (`'<folder>' in parents`) ไล่โฟลเดอร์ย่อย, ข้าม shortcut/ถังขยะ/โฟลเดอร์ของระบบ | Graph `/children` |
+| ตรวจไฟล์เปลี่ยน | `md5Checksum` (ไฟล์ Google ใช้ `modifiedTime`) | `cTag` |
+| อ่านเนื้อหา | `DriveApp.getBlob()` → แปลง/OCR · Google Docs/Sheets/Slides อ่านตรงไม่ต้องแปลง | ดาวน์โหลดผ่าน Graph → แปลง/OCR |
+
+ถ้าเอกสารยังต้องแก้ใน OneDrive ให้เครื่องหนึ่งเครื่องติดตั้ง OneDrive + Google Drive for desktop แล้วคัดลอกโฟลเดอร์ระหว่างกัน หรือให้ผู้ดูแลอัปโหลดเอกสารฉบับล่าสุดขึ้น Google Drive
+
 ---
 
 ## 2. สถาปัตยกรรม
@@ -72,6 +83,7 @@ flowchart LR
 | ส่วนประกอบ | ไฟล์ | หน้าที่ |
 |---|---|---|
 | Config / Repo | `gas/Config.js`, `gas/Repo.js` | โครงสร้างตาราง, ค่าตั้งค่า, normalize ข้อความ, อ่าน/เขียน Sheet เป็นก้อน |
+| Source | `gas/Source.js` | เลือกแหล่งเอกสารจากค่า SOURCE (Google Drive / OneDrive), รายการไฟล์รูปแบบเดียวกัน, อ่านไฟล์ Google ตรง |
 | Graph client | `gas/Graph.js` | ขอ/แคช token, `graphFetch_` พร้อม retry 429/5xx, resolve โฟลเดอร์, ไล่รายการไฟล์, ดาวน์โหลด |
 | Sync | `gas/Sync.js` | เทียบรายการไฟล์ใน OneDrive กับ Sheet → ไฟล์ใหม่/เปลี่ยน/ย้าย/ถูกลบ → คิว → แตกข้อความ |
 | Extract | `gas/Extract.js` | แปลงเป็นไฟล์ Google ชั่วคราว (OCR สำหรับ PDF) → เก็บ `.txt` ใน Drive |

@@ -8,8 +8,10 @@
  * ค่าคงที่ โครงสร้างตาราง และค่าตั้งค่าของระบบ
  *
  * Script Properties (ตั้งผ่านเมนู "SearchDocSystem → 2. ตั้งค่า" ใน Google Sheet — ห้ามเขียนลงโค้ด):
- *   TENANT_ID, CLIENT_ID, CLIENT_SECRET   App ใน Microsoft Entra ID (Graph API)
- *   SOURCE             โฟลเดอร์ OneDrive: ลิงก์แชร์ หรือ อีเมลเจ้าของ:/path เช่น user@daihen.co.th:/Documents/QA
+ *   SOURCE             แหล่งเอกสาร (ดู Source.js):
+ *                        ลิงก์โฟลเดอร์ Google Drive หรือ ID ของโฟลเดอร์ — ไม่ต้องใช้ค่าอื่นเพิ่ม
+ *                        ลิงก์แชร์ OneDrive หรือ อีเมลเจ้าของ:/path — ต้องใช้ TENANT_ID, CLIENT_ID, CLIENT_SECRET ด้วย
+ *   TENANT_ID, CLIENT_ID, CLIENT_SECRET   App ใน Microsoft Entra ID (เฉพาะ OneDrive)
  *   SITE_PASSWORD      (ไม่บังคับ) รหัสเข้าหน้าเว็บค้นหา — เว้นว่าง = ใครมีลิงก์เว็บก็ค้นได้
  *   SPREADSHEET_ID, DRIVE_ROOT_ID, TEXT_FOLDER_ID, INDEX_FOLDER_ID, TMP_FOLDER_ID,
  *   SOURCE_DRIVE_ID, SOURCE_ITEM_ID, INDEX_MANIFEST, LAST_SYNC  — ระบบตั้งให้เอง
@@ -29,7 +31,8 @@ const SCHEMA = {
 
 const DEFAULT_SETTINGS = [
   ['sync_interval_minutes', '30', 'รอบการ sync อัตโนมัติ (5, 10, 15 หรือ 30 นาที) — รันเมนู "ติดตั้ง / อัปเดตระบบ" ใหม่หลังแก้'],
-  ['file_extensions', 'pdf,docx,doc,xlsx,xls,csv,pptx,ppt,txt', 'นามสกุลที่แตกเนื้อหามาค้นหา (ไฟล์อื่นค้นได้จากชื่ออย่างเดียว)'],
+  ['file_extensions', 'pdf,docx,doc,xlsx,xls,csv,pptx,ppt,txt,gdoc,gsheet,gslides',
+    'นามสกุลที่แตกเนื้อหามาค้นหา (gdoc/gsheet/gslides = ไฟล์ Google) ไฟล์อื่นค้นได้จากชื่ออย่างเดียว'],
   ['ocr_language', 'th', 'ภาษาของ OCR สำหรับ PDF'],
   ['max_file_mb', '40', 'ไฟล์ใหญ่กว่านี้ (MB) ไม่แตกเนื้อหา ค้นได้จากชื่อเท่านั้น'],
   ['max_text_chars', '20000', 'จำนวนตัวอักษรของเนื้อหาต่อไฟล์ที่ใส่ใน search index'],
@@ -69,7 +72,8 @@ function getSettings_() {
   const interval = Number(raw.sync_interval_minutes);
   settingsCache_ = {
     syncIntervalMinutes: [5, 10, 15, 30].includes(interval) ? interval : 30,
-    fileExtensions: raw.file_extensions.split(',').map((s) => s.trim().toLowerCase().replace(/^\./, '')).filter(Boolean),
+    fileExtensions: (raw.file_extensions === 'pdf,docx,doc,xlsx,xls,csv,pptx,ppt,txt' // ค่าเริ่มต้นรุ่นแรก → เพิ่มไฟล์ Google
+      ? DEFAULT_SETTINGS[1][1] : raw.file_extensions).split(',').map((s) => s.trim().toLowerCase().replace(/^\./, '')).filter(Boolean),
     ocrLanguage: raw.ocr_language || 'th',
     maxFileBytes: (Number(raw.max_file_mb) || 40) * 1024 * 1024,
     maxTextChars: Number(raw.max_text_chars) || 20000,
@@ -208,6 +212,146 @@ function appendRows_(sheet, rows, keep) {
   range.setValues(rows);
   const excess = sheet.getLastRow() - 1 - keep;
   if (excess > 0) sheet.deleteRows(2, excess);
+}
+
+// ==================== Source.js ====================
+
+/**
+ * แหล่งเอกสาร — ระบบดูจากค่า SOURCE เองว่าเป็นแบบไหน
+ *   Google Drive : ลิงก์โฟลเดอร์ https://drive.google.com/drive/folders/<ID> หรือ ID ของโฟลเดอร์
+ *                  อ่านด้วยสิทธิ์ของบัญชีที่ติดตั้ง Script ไม่ต้องใช้ App จาก IT
+ *   OneDrive     : ลิงก์แชร์ OneDrive หรือ อีเมล:/path — ต้องมี App ใน Entra ID (Graph.js)
+ *
+ * ทุกแบบคืนรายการไฟล์ในรูปแบบเดียวกัน:
+ *   { id, name, ext, path, size, modified, modifiedBy, webUrl, changeKey }
+ */
+
+const GOOGLE_NATIVE_EXT = {
+  'application/vnd.google-apps.document': 'gdoc',
+  'application/vnd.google-apps.spreadsheet': 'gsheet',
+  'application/vnd.google-apps.presentation': 'gslides',
+};
+const GDRIVE_FIELDS = 'nextPageToken, files(id, name, mimeType, size, modifiedTime, md5Checksum, webViewLink, lastModifyingUser(displayName))';
+
+function getSourceKind_() {
+  const input = (props_().getProperty('SOURCE') || '').trim();
+  return parseDriveFolderId_(input) ? 'gdrive' : 'onedrive';
+}
+
+/** ID ของโฟลเดอร์ Google Drive จากลิงก์หรือ ID ตรง ๆ — ไม่ใช่ Google Drive คืน '' */
+function parseDriveFolderId_(input) {
+  const s = String(input || '').trim();
+  let m = s.match(/^https:\/\/drive\.google\.com\/.*(?:\/folders\/|[?&]id=)([-\w]{10,})/);
+  if (m) return m[1];
+  m = s.match(/^[-\w]{20,}$/);
+  return m ? m[0] : '';
+}
+
+function sourceLabel_(kind) {
+  return kind === 'gdrive' ? 'Google Drive' : 'OneDrive';
+}
+
+/** ข้อมูลโฟลเดอร์ต้นทาง { kind, name } — ตรวจว่าเปิดได้ */
+function describeSource_() {
+  const kind = getSourceKind_();
+  if (kind === 'onedrive') return { kind, name: getSource_().name };
+  const id = parseDriveFolderId_(props_().getProperty('SOURCE'));
+  let folder;
+  try {
+    folder = Drive.Files.get(id, { fields: 'id, name, mimeType', supportsAllDrives: true });
+  } catch (err) {
+    throw new Error(`เปิดโฟลเดอร์ Google Drive ไม่ได้ — ตรวจว่าบัญชีที่ติดตั้ง Script มีสิทธิ์ดูโฟลเดอร์นี้ (${err.message})`);
+  }
+  if (folder.mimeType !== 'application/vnd.google-apps.folder') throw new Error(`"${folder.name}" ไม่ใช่โฟลเดอร์`);
+  return { kind, name: folder.name };
+}
+
+function listSource_() {
+  return getSourceKind_() === 'gdrive' ? listDriveFolder_() : listOneDrive_();
+}
+
+/** แตกข้อความของไฟล์ในแหล่งเอกสาร */
+function extractFromSource_(row) {
+  if (getSourceKind_() === 'gdrive') {
+    if (['gdoc', 'gsheet', 'gslides'].includes(row.ext)) return readGoogleFile_(row.id, row.ext);
+    return extractText_(DriveApp.getFileById(row.id).getBlob(), row.ext);
+  }
+  const source = getSource_();
+  return extractText_(downloadItem_(source.driveId, row.id), row.ext);
+}
+
+// ---------- Google Drive ----------
+
+function listDriveFolder_() {
+  const rootId = parseDriveFolderId_(props_().getProperty('SOURCE'));
+  const ownFolder = props_().getProperty('DRIVE_ROOT_ID'); // โฟลเดอร์ของระบบเอง ห้ามนำมา index
+  const out = [];
+  const queue = [{ id: rootId, path: '' }];
+  let folders = 0;
+  while (queue.length) {
+    const { id, path } = queue.shift();
+    if (id === ownFolder) continue;
+    if (++folders > 5000) throw new Error('โฟลเดอร์ย่อยมากเกิน 5,000 โฟลเดอร์');
+    let pageToken;
+    do {
+      const page = Drive.Files.list({
+        q: `'${id}' in parents and trashed = false`,
+        fields: GDRIVE_FIELDS,
+        pageSize: 1000,
+        pageToken,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      });
+      (page.files || []).forEach((f) => {
+        if (f.mimeType === 'application/vnd.google-apps.folder') {
+          queue.push({ id: f.id, path: path ? `${path}/${f.name}` : f.name });
+          return;
+        }
+        if (f.mimeType === 'application/vnd.google-apps.shortcut') return; // ข้าม shortcut กันไฟล์ซ้ำ
+        const native = GOOGLE_NATIVE_EXT[f.mimeType];
+        out.push({
+          id: f.id,
+          name: f.name,
+          ext: native || extOf_(f.name),
+          path,
+          size: Number(f.size) || 0,
+          modified: f.modifiedTime || '',
+          modifiedBy: (f.lastModifyingUser && f.lastModifyingUser.displayName) || '',
+          webUrl: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`,
+          changeKey: f.md5Checksum || f.modifiedTime || '',
+        });
+      });
+      pageToken = page.nextPageToken;
+    } while (pageToken);
+  }
+  return out;
+}
+
+/** อ่านข้อความจาก Google Docs / Sheets / Slides โดยตรง ไม่ต้องแปลงไฟล์ */
+function readGoogleFile_(id, ext) {
+  if (ext === 'gdoc') return DocumentApp.openById(id).getBody().getText();
+  if (ext === 'gsheet') return sheetText_(SpreadsheetApp.openById(id));
+  return slidesText_(SlidesApp.openById(id));
+}
+
+// ---------- OneDrive (Graph) ----------
+
+function listOneDrive_() {
+  return listAllFiles_(getSource_()).map(({ item, path }) => ({
+    id: item.id,
+    name: item.name,
+    ext: extOf_(item.name),
+    path,
+    size: Number(item.size) || 0,
+    modified: (item.fileSystemInfo && item.fileSystemInfo.lastModifiedDateTime) || '',
+    modifiedBy: (item.lastModifiedBy && item.lastModifiedBy.user && item.lastModifiedBy.user.displayName) || '',
+    webUrl: item.webUrl || '',
+    changeKey: item.cTag || item.eTag || `${item.fileSystemInfo && item.fileSystemInfo.lastModifiedDateTime}|${item.size}`,
+  }));
+}
+
+function extOf_(name) {
+  return (String(name).match(/\.([A-Za-z0-9]{1,6})$/) || ['', ''])[1].toLowerCase();
 }
 
 // ==================== Graph.js ====================
@@ -366,6 +510,7 @@ function downloadItem_(driveId, itemId) {
  *   Excel / CSV  → Google Sheets
  *   PowerPoint   → Google Slides
  *   txt / md     → อ่านตรง
+ * (Google Docs / Sheets / Slides ในโฟลเดอร์ Google Drive อ่านตรงได้เลย — ดู readGoogleFile_ ใน Source.js)
  */
 
 const CONVERT_TARGET = {
@@ -391,19 +536,25 @@ function extractText_(blob, ext) {
   );
   try {
     if (target === CONVERT_TARGET.docx) return DocumentApp.openById(tmp.id).getBody().getText();
-    if (target === CONVERT_TARGET.xlsx) {
-      return SpreadsheetApp.openById(tmp.id).getSheets()
-        .map((s) => s.getDataRange().getDisplayValues().map((r) => r.filter(String).join(' ')).filter(Boolean).join('\n'))
-        .join('\n');
-    }
-    return SlidesApp.openById(tmp.id).getSlides()
-      .map((slide) => slide.getShapes().map((sh) => {
-        try { return sh.getText().asString(); } catch (e) { return ''; }
-      }).join('\n'))
-      .join('\n');
+    if (target === CONVERT_TARGET.xlsx) return sheetText_(SpreadsheetApp.openById(tmp.id));
+    return slidesText_(SlidesApp.openById(tmp.id));
   } finally {
     try { Drive.Files.remove(tmp.id); } catch (e) { log_('WARN', `ลบไฟล์ชั่วคราว ${tmp.id} ไม่ได้: ${e.message}`); }
   }
+}
+
+function sheetText_(spreadsheet) {
+  return spreadsheet.getSheets()
+    .map((s) => s.getDataRange().getDisplayValues().map((r) => r.filter(String).join(' ')).filter(Boolean).join('\n'))
+    .join('\n');
+}
+
+function slidesText_(presentation) {
+  return presentation.getSlides()
+    .map((slide) => slide.getShapes().map((sh) => {
+      try { return sh.getText().asString(); } catch (e) { return ''; }
+    }).join('\n'))
+    .join('\n');
 }
 
 /** บันทึกข้อความลง Drive /text — ใช้ไฟล์เดิมถ้ามี */
@@ -433,7 +584,7 @@ function readText_(textFileId) {
 // ==================== Sync.js ====================
 
 /**
- * Sync: เทียบรายการไฟล์ใน OneDrive กับ sheet Files → แตกข้อความไฟล์ใหม่/ที่เปลี่ยน → สร้าง search index
+ * Sync: เทียบรายการไฟล์ในแหล่งเอกสาร (Google Drive / OneDrive) กับ sheet Files → แตกข้อความไฟล์ใหม่/ที่เปลี่ยน → สร้าง search index
  *   runScheduled(e)  เรียกโดย time trigger
  *   syncNow()        เรียกจากเมนูใน Google Sheet
  * งานที่ทำไม่ทันในรอบเดียว (GAS รันได้ครั้งละ 6 นาที) จะทำต่อในรอบถัดไป
@@ -462,7 +613,7 @@ function runSync_() {
   const summary = { total: 0, added: 0, changed: 0, moved: 0, deleted: 0, extracted: 0, failed: 0, remaining: 0 };
   try {
     const files = new Table(getSpreadsheet_(), 'Files');
-    const diff = applyListing_(files, listAllFiles_(getSource_()));
+    const diff = applyListing_(files, listSource_());
     Object.assign(summary, diff);
     files.save();
 
@@ -490,31 +641,30 @@ function runSync_() {
   }
 }
 
-/** เทียบรายการจาก OneDrive กับตาราง Files (แก้ใน memory) */
+/** เทียบรายการไฟล์จากแหล่งเอกสาร (Source.js) กับตาราง Files (แก้ใน memory) */
 function applyListing_(files, listing) {
   const settings = getSettings_();
   const result = { added: 0, changed: 0, moved: 0, deleted: 0 };
   const seen = new Set();
 
-  listing.forEach(({ item, path }) => {
-    seen.add(item.id);
-    const ext = (item.name.match(/\.([A-Za-z0-9]{1,6})$/) || ['', ''])[1].toLowerCase();
-    const changeKey = item.cTag || item.eTag || `${item.fileSystemInfo && item.fileSystemInfo.lastModifiedDateTime}|${item.size}`;
-    const extractable = settings.fileExtensions.includes(ext) && Number(item.size) <= settings.maxFileBytes;
+  listing.forEach((entry) => {
+    seen.add(entry.id);
+    const extractable = settings.fileExtensions.includes(entry.ext) && entry.size <= settings.maxFileBytes;
     const meta = {
-      name: item.name,
-      ext,
-      path,
-      web_url: item.webUrl || '',
-      size: item.size || 0,
-      modified_at: (item.fileSystemInfo && item.fileSystemInfo.lastModifiedDateTime) || '',
-      modified_by: (item.lastModifiedBy && item.lastModifiedBy.user && item.lastModifiedBy.user.displayName) || '',
-      change_key: changeKey,
+      name: entry.name,
+      ext: entry.ext,
+      path: entry.path,
+      web_url: entry.webUrl,
+      size: entry.size,
+      modified_at: entry.modified,
+      modified_by: entry.modifiedBy,
+      change_key: entry.changeKey,
     };
+    const changeKey = entry.changeKey;
 
-    const row = files.get(item.id);
+    const row = files.get(entry.id);
     if (!row) {
-      files.insert(Object.assign({ id: item.id, first_seen_at: nowIso_(), attempts: 0 }, meta,
+      files.insert(Object.assign({ id: entry.id, first_seen_at: nowIso_(), attempts: 0 }, meta,
         { status: extractable ? STATUS.QUEUED : STATUS.NAME_ONLY }));
       result.added++;
       return;
@@ -546,7 +696,6 @@ function applyListing_(files, listing) {
 
 /** แตกข้อความไฟล์ในคิวจนกว่าจะใกล้หมดเวลา */
 function processQueue_(files, started) {
-  const source = getSource_();
   const out = { extracted: 0, failed: 0 };
   const queue = files.filter((f) => f.status === STATUS.QUEUED)
     .sort((a, b) => b.modified_at.localeCompare(a.modified_at)); // ไฟล์ใหม่ก่อน
@@ -554,8 +703,7 @@ function processQueue_(files, started) {
     if (Date.now() - started > MAX_RUNTIME_MS) break;
     const key = row.change_key;
     try {
-      const blob = downloadItem_(source.driveId, row.id);
-      const text = extractText_(blob, row.ext).replace(/\r\n?/g, '\n').trim();
+      const text = extractFromSource_(row).replace(/\r\n?/g, '\n').trim();
       files.update(row, {
         text_file_id: saveText_(row, text),
         text_chars: text.length,
@@ -703,6 +851,7 @@ function getAppInfo() {
   try { lastSync = JSON.parse(props_().getProperty('LAST_SYNC') || '{}'); } catch (e) { /* ยังไม่เคย sync */ }
   return {
     name: APP_NAME,
+    source: sourceLabel_(getSourceKind_()),
     needCode: !!props_().getProperty('SITE_PASSWORD'),
     indexVersion: manifest.version || '',
     count: manifest.count || 0,
@@ -792,13 +941,13 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('🔎 SearchDocSystem')
     .addItem('1. ติดตั้ง / อัปเดตระบบ', 'menuInstall')
-    .addItem('2. ตั้งค่า (OneDrive, รหัสเข้าเว็บ)', 'menuSettings')
+    .addItem('2. ตั้งค่า (แหล่งเอกสาร, รหัสเข้าเว็บ)', 'menuSettings')
     .addItem('3. เปิดหน้าเว็บ', 'menuOpenWebApp')
     .addSeparator()
     .addItem('Sync ตอนนี้', 'menuSync')
     .addItem('ลองแตกข้อความไฟล์ที่ล้มเหลวใหม่', 'menuRetryFailed')
     .addSubMenu(ui.createMenu('ทดสอบ')
-      .addItem('เชื่อมต่อ OneDrive', 'menuTestConnection')
+      .addItem('เชื่อมต่อแหล่งเอกสาร', 'menuTestConnection')
       .addItem('แตกข้อความ (OCR) ไฟล์แรก', 'menuTestExtract'))
     .addToUi();
 }
@@ -814,7 +963,7 @@ function runMenu_(title, fn) {
 }
 
 function menuInstall() { runMenu_('ติดตั้งระบบ', () => setup()); }
-function menuTestConnection() { runMenu_('ทดสอบเชื่อมต่อ OneDrive', () => testConnection()); }
+function menuTestConnection() { runMenu_('ทดสอบเชื่อมต่อแหล่งเอกสาร', () => testConnection()); }
 function menuTestExtract() { runMenu_('ทดสอบแตกข้อความ', () => testExtract()); }
 
 function menuSync() {
@@ -851,11 +1000,11 @@ function menuOpenWebApp() {
 // ---------- หน้าต่างตั้งค่า ----------
 
 const CONFIG_FIELDS = [
-  { key: 'TENANT_ID', label: 'Directory (tenant) ID — จาก IT', secret: false },
-  { key: 'CLIENT_ID', label: 'Application (client) ID — จาก IT', secret: false },
-  { key: 'CLIENT_SECRET', label: 'Client secret (Value) — จาก IT', secret: true },
-  { key: 'SOURCE', label: 'โฟลเดอร์ OneDrive: ลิงก์แชร์ หรือ อีเมล:/path', secret: false },
+  { key: 'SOURCE', label: 'แหล่งเอกสาร: ลิงก์โฟลเดอร์ Google Drive (หรือลิงก์ OneDrive)', secret: false },
   { key: 'SITE_PASSWORD', label: 'รหัสเข้าหน้าเว็บค้นหา (ไม่บังคับ)', secret: true },
+  { key: 'TENANT_ID', label: 'OneDrive เท่านั้น — Directory (tenant) ID', secret: false },
+  { key: 'CLIENT_ID', label: 'OneDrive เท่านั้น — Application (client) ID', secret: false },
+  { key: 'CLIENT_SECRET', label: 'OneDrive เท่านั้น — Client secret (Value)', secret: true },
 ];
 
 function menuSettings() {
@@ -880,7 +1029,7 @@ function menuSettings() {
         button { height: 36px; padding: 0 18px; border: 0; border-radius: 8px; background: #cc785c; color: #fff; font-size: 14px; cursor: pointer; }
         #msg { margin-left: 10px; font-size: 13px; }
       </style>
-      <p>ใส่ค่าจาก IT ทีหลังได้ · ช่องรหัสที่เว้นว่างจะใช้ค่าเดิม · พิมพ์ - เพื่อลบรหัสเข้าเว็บ</p>
+      <p>ใช้โฟลเดอร์ Google Drive ไม่ต้องกรอก 3 ช่องล่าง · ช่องรหัสที่เว้นว่างจะใช้ค่าเดิม · พิมพ์ - เพื่อลบค่า</p>
       <form id="f">${fields}<button type="submit">บันทึก</button><span id="msg"></span></form>
       <script>
         document.getElementById('f').onsubmit = (e) => {
@@ -916,8 +1065,8 @@ function saveSettingsFromDialog(values) {
 /**
  * ติดตั้งระบบและฟังก์ชันทดสอบ — เรียกจากเมนูใน Google Sheet (Menu.js) หรือจาก Apps Script editor
  *   setup()            สร้าง sheet, โฟลเดอร์ใน Drive และ trigger — รันซ้ำได้ ไม่ลบข้อมูลเดิม
- *   testConnection()   ทดสอบ Graph API + อ่านรายการไฟล์
- *   testExtract()      ทดสอบดาวน์โหลด + แตกข้อความไฟล์แรกที่รองรับ
+ *   testConnection()   ทดสอบเปิดโฟลเดอร์แหล่งเอกสาร + อ่านรายการไฟล์
+ *   testExtract()      ทดสอบแตกข้อความ PDF ไฟล์แรก (หรือไฟล์แรกที่รองรับ)
  */
 
 function setup() {
@@ -964,13 +1113,15 @@ function setup() {
   log_('INFO', `setup เสร็จ: sync ทุก ${minutes} นาที`);
   flushLogs_();
 
-  const need = ['TENANT_ID', 'CLIENT_ID', 'CLIENT_SECRET', 'SOURCE'].filter((k) => !p.getProperty(k));
+  const need = getSourceKind_() === 'onedrive' && p.getProperty('SOURCE')
+    ? ['TENANT_ID', 'CLIENT_ID', 'CLIENT_SECRET'].filter((k) => !p.getProperty(k))
+    : (p.getProperty('SOURCE') ? [] : ['แหล่งเอกสาร (ลิงก์โฟลเดอร์ Google Drive)']);
   return [
     '✅ ติดตั้งเสร็จแล้ว',
     `• sheet: ${Object.keys(SCHEMA).join(', ')}`,
-    `• โฟลเดอร์ใน Google Drive: ${root.getUrl()}`,
+    `• โฟลเดอร์ของระบบใน Google Drive: ${root.getUrl()}`,
     `• Sync อัตโนมัติทุก ${minutes} นาที`,
-    need.length ? `\nขั้นต่อไป: เมนู "2. ตั้งค่า" — ยังไม่ได้ใส่ ${need.join(', ')}` : '\nขั้นต่อไป: เมนู "ทดสอบ → เชื่อมต่อ OneDrive"',
+    need.length ? `\nขั้นต่อไป: เมนู "2. ตั้งค่า" — ยังไม่ได้ใส่ ${need.join(', ')}` : '\nขั้นต่อไป: เมนู "ทดสอบ → เชื่อมต่อแหล่งเอกสาร"',
   ].join('\n');
 }
 
@@ -986,31 +1137,34 @@ function ensureFolder_(id, parent, name) {
 
 function testConnection() {
   requireOwner_();
-  graphToken_(true);
-  const lines = ['✅ ขอ token จาก Microsoft Entra ID สำเร็จ'];
-  const source = getSource_();
-  lines.push(`✅ เปิดโฟลเดอร์ได้: "${source.name}"`);
-  const items = listAllFiles_(source);
+  const lines = [];
+  const kind = getSourceKind_();
+  if (kind === 'onedrive') {
+    graphToken_(true);
+    lines.push('✅ ขอ token จาก Microsoft Entra ID สำเร็จ');
+  }
+  const source = describeSource_();
+  lines.push(`✅ เปิดโฟลเดอร์ ${sourceLabel_(kind)} ได้: "${source.name}"`);
+  const items = listSource_();
   const exts = getSettings_().fileExtensions;
-  const supported = items.filter(({ item }) => exts.includes((item.name.split('.').pop() || '').toLowerCase())).length;
-  lines.push(`พบ ${items.length} ไฟล์ (แตกเนื้อหาได้ ${supported} ไฟล์)${items.length > 15 ? ' — แสดง 15 ไฟล์แรก' : ''}:`, '');
-  items.slice(0, 15).forEach(({ item, path }) => lines.push(`• ${path ? path + '/' : ''}${item.name}`));
+  const supported = items.filter((f) => exts.includes(f.ext)).length;
+  lines.push(`พบ ${items.length} ไฟล์ (อ่านเนื้อหาได้ ${supported} ไฟล์)${items.length > 15 ? ' — แสดง 15 ไฟล์แรก' : ''}:`, '');
+  items.slice(0, 15).forEach((f) => lines.push(`• ${f.path ? f.path + '/' : ''}${f.name}`));
   return lines.join('\n');
 }
 
 function testExtract() {
   requireOwner_();
-  const source = getSource_();
   const exts = getSettings_().fileExtensions;
-  const found = listAllFiles_(source).find(({ item }) => exts.includes((item.name.split('.').pop() || '').toLowerCase()));
-  if (!found) throw new Error('ไม่พบไฟล์ชนิดที่รองรับในโฟลเดอร์');
-  const { item } = found;
+  const files = listSource_().filter((f) => exts.includes(f.ext));
+  const file = files.find((f) => f.ext === 'pdf') || files[0];
+  if (!file) throw new Error('ไม่พบไฟล์ชนิดที่รองรับในโฟลเดอร์');
   const started = Date.now();
-  const text = extractText_(downloadItem_(source.driveId, item.id), item.name.split('.').pop().toLowerCase());
+  const text = extractFromSource_(file);
   const chars = Array.from(text.replace(/\s/g, ''));
-  const thai = chars.filter((c) => /[฀-๿]/.test(c)).length;
+  const thai = chars.filter((c) => /[\u0e00-\u0e7f]/.test(c)).length;
   return [
-    `ไฟล์: ${item.name} (${(item.size / 1024 / 1024).toFixed(2)} MB)`,
+    `ไฟล์: ${file.name}${file.size ? ` (${(file.size / 1024 / 1024).toFixed(2)} MB)` : ''}`,
     `ใช้เวลา ${((Date.now() - started) / 1000).toFixed(1)} วินาที · ได้ ${text.length.toLocaleString()} ตัวอักษร ` +
       `(ภาษาไทย ${chars.length ? Math.round(thai / chars.length * 100) : 0}%)`,
     '',

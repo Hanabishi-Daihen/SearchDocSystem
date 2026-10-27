@@ -5,6 +5,7 @@
  *   Excel / CSV  → Google Sheets
  *   PowerPoint   → Google Slides
  *   txt / md     → อ่านตรง
+ * (Google Docs / Sheets / Slides ในโฟลเดอร์ Google Drive อ่านตรงได้เลย — ดู readGoogleFile_ ใน Source.js)
  */
 
 const CONVERT_TARGET = {
@@ -30,19 +31,25 @@ function extractText_(blob, ext) {
   );
   try {
     if (target === CONVERT_TARGET.docx) return DocumentApp.openById(tmp.id).getBody().getText();
-    if (target === CONVERT_TARGET.xlsx) {
-      return SpreadsheetApp.openById(tmp.id).getSheets()
-        .map((s) => s.getDataRange().getDisplayValues().map((r) => r.filter(String).join(' ')).filter(Boolean).join('\n'))
-        .join('\n');
-    }
-    return SlidesApp.openById(tmp.id).getSlides()
-      .map((slide) => slide.getShapes().map((sh) => {
-        try { return sh.getText().asString(); } catch (e) { return ''; }
-      }).join('\n'))
-      .join('\n');
+    if (target === CONVERT_TARGET.xlsx) return sheetText_(SpreadsheetApp.openById(tmp.id));
+    return slidesText_(SlidesApp.openById(tmp.id));
   } finally {
     try { Drive.Files.remove(tmp.id); } catch (e) { log_('WARN', `ลบไฟล์ชั่วคราว ${tmp.id} ไม่ได้: ${e.message}`); }
   }
+}
+
+function sheetText_(spreadsheet) {
+  return spreadsheet.getSheets()
+    .map((s) => s.getDataRange().getDisplayValues().map((r) => r.filter(String).join(' ')).filter(Boolean).join('\n'))
+    .join('\n');
+}
+
+function slidesText_(presentation) {
+  return presentation.getSlides()
+    .map((slide) => slide.getShapes().map((sh) => {
+      try { return sh.getText().asString(); } catch (e) { return ''; }
+    }).join('\n'))
+    .join('\n');
 }
 
 /** บันทึกข้อความลง Drive /text — ใช้ไฟล์เดิมถ้ามี */

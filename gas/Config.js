@@ -2,8 +2,10 @@
  * ค่าคงที่ โครงสร้างตาราง และค่าตั้งค่าของระบบ
  *
  * Script Properties (ตั้งผ่านเมนู "SearchDocSystem → 2. ตั้งค่า" ใน Google Sheet — ห้ามเขียนลงโค้ด):
- *   TENANT_ID, CLIENT_ID, CLIENT_SECRET   App ใน Microsoft Entra ID (Graph API)
- *   SOURCE             โฟลเดอร์ OneDrive: ลิงก์แชร์ หรือ อีเมลเจ้าของ:/path เช่น user@daihen.co.th:/Documents/QA
+ *   SOURCE             แหล่งเอกสาร (ดู Source.js):
+ *                        ลิงก์โฟลเดอร์ Google Drive หรือ ID ของโฟลเดอร์ — ไม่ต้องใช้ค่าอื่นเพิ่ม
+ *                        ลิงก์แชร์ OneDrive หรือ อีเมลเจ้าของ:/path — ต้องใช้ TENANT_ID, CLIENT_ID, CLIENT_SECRET ด้วย
+ *   TENANT_ID, CLIENT_ID, CLIENT_SECRET   App ใน Microsoft Entra ID (เฉพาะ OneDrive)
  *   SITE_PASSWORD      (ไม่บังคับ) รหัสเข้าหน้าเว็บค้นหา — เว้นว่าง = ใครมีลิงก์เว็บก็ค้นได้
  *   SPREADSHEET_ID, DRIVE_ROOT_ID, TEXT_FOLDER_ID, INDEX_FOLDER_ID, TMP_FOLDER_ID,
  *   SOURCE_DRIVE_ID, SOURCE_ITEM_ID, INDEX_MANIFEST, LAST_SYNC  — ระบบตั้งให้เอง
@@ -23,7 +25,8 @@ const SCHEMA = {
 
 const DEFAULT_SETTINGS = [
   ['sync_interval_minutes', '30', 'รอบการ sync อัตโนมัติ (5, 10, 15 หรือ 30 นาที) — รันเมนู "ติดตั้ง / อัปเดตระบบ" ใหม่หลังแก้'],
-  ['file_extensions', 'pdf,docx,doc,xlsx,xls,csv,pptx,ppt,txt', 'นามสกุลที่แตกเนื้อหามาค้นหา (ไฟล์อื่นค้นได้จากชื่ออย่างเดียว)'],
+  ['file_extensions', 'pdf,docx,doc,xlsx,xls,csv,pptx,ppt,txt,gdoc,gsheet,gslides',
+    'นามสกุลที่แตกเนื้อหามาค้นหา (gdoc/gsheet/gslides = ไฟล์ Google) ไฟล์อื่นค้นได้จากชื่ออย่างเดียว'],
   ['ocr_language', 'th', 'ภาษาของ OCR สำหรับ PDF'],
   ['max_file_mb', '40', 'ไฟล์ใหญ่กว่านี้ (MB) ไม่แตกเนื้อหา ค้นได้จากชื่อเท่านั้น'],
   ['max_text_chars', '20000', 'จำนวนตัวอักษรของเนื้อหาต่อไฟล์ที่ใส่ใน search index'],
@@ -63,7 +66,8 @@ function getSettings_() {
   const interval = Number(raw.sync_interval_minutes);
   settingsCache_ = {
     syncIntervalMinutes: [5, 10, 15, 30].includes(interval) ? interval : 30,
-    fileExtensions: raw.file_extensions.split(',').map((s) => s.trim().toLowerCase().replace(/^\./, '')).filter(Boolean),
+    fileExtensions: (raw.file_extensions === 'pdf,docx,doc,xlsx,xls,csv,pptx,ppt,txt' // ค่าเริ่มต้นรุ่นแรก → เพิ่มไฟล์ Google
+      ? DEFAULT_SETTINGS[1][1] : raw.file_extensions).split(',').map((s) => s.trim().toLowerCase().replace(/^\./, '')).filter(Boolean),
     ocrLanguage: raw.ocr_language || 'th',
     maxFileBytes: (Number(raw.max_file_mb) || 40) * 1024 * 1024,
     maxTextChars: Number(raw.max_text_chars) || 20000,

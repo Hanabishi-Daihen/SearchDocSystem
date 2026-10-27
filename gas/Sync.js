@@ -1,5 +1,5 @@
 /**
- * Sync: เทียบรายการไฟล์ใน OneDrive กับ sheet Files → แตกข้อความไฟล์ใหม่/ที่เปลี่ยน → สร้าง search index
+ * Sync: เทียบรายการไฟล์ในแหล่งเอกสาร (Google Drive / OneDrive) กับ sheet Files → แตกข้อความไฟล์ใหม่/ที่เปลี่ยน → สร้าง search index
  *   runScheduled(e)  เรียกโดย time trigger
  *   syncNow()        เรียกจากเมนูใน Google Sheet
  * งานที่ทำไม่ทันในรอบเดียว (GAS รันได้ครั้งละ 6 นาที) จะทำต่อในรอบถัดไป
@@ -28,7 +28,7 @@ function runSync_() {
   const summary = { total: 0, added: 0, changed: 0, moved: 0, deleted: 0, extracted: 0, failed: 0, remaining: 0 };
   try {
     const files = new Table(getSpreadsheet_(), 'Files');
-    const diff = applyListing_(files, listAllFiles_(getSource_()));
+    const diff = applyListing_(files, listSource_());
     Object.assign(summary, diff);
     files.save();
 
@@ -56,31 +56,30 @@ function runSync_() {
   }
 }
 
-/** เทียบรายการจาก OneDrive กับตาราง Files (แก้ใน memory) */
+/** เทียบรายการไฟล์จากแหล่งเอกสาร (Source.js) กับตาราง Files (แก้ใน memory) */
 function applyListing_(files, listing) {
   const settings = getSettings_();
   const result = { added: 0, changed: 0, moved: 0, deleted: 0 };
   const seen = new Set();
 
-  listing.forEach(({ item, path }) => {
-    seen.add(item.id);
-    const ext = (item.name.match(/\.([A-Za-z0-9]{1,6})$/) || ['', ''])[1].toLowerCase();
-    const changeKey = item.cTag || item.eTag || `${item.fileSystemInfo && item.fileSystemInfo.lastModifiedDateTime}|${item.size}`;
-    const extractable = settings.fileExtensions.includes(ext) && Number(item.size) <= settings.maxFileBytes;
+  listing.forEach((entry) => {
+    seen.add(entry.id);
+    const extractable = settings.fileExtensions.includes(entry.ext) && entry.size <= settings.maxFileBytes;
     const meta = {
-      name: item.name,
-      ext,
-      path,
-      web_url: item.webUrl || '',
-      size: item.size || 0,
-      modified_at: (item.fileSystemInfo && item.fileSystemInfo.lastModifiedDateTime) || '',
-      modified_by: (item.lastModifiedBy && item.lastModifiedBy.user && item.lastModifiedBy.user.displayName) || '',
-      change_key: changeKey,
+      name: entry.name,
+      ext: entry.ext,
+      path: entry.path,
+      web_url: entry.webUrl,
+      size: entry.size,
+      modified_at: entry.modified,
+      modified_by: entry.modifiedBy,
+      change_key: entry.changeKey,
     };
+    const changeKey = entry.changeKey;
 
-    const row = files.get(item.id);
+    const row = files.get(entry.id);
     if (!row) {
-      files.insert(Object.assign({ id: item.id, first_seen_at: nowIso_(), attempts: 0 }, meta,
+      files.insert(Object.assign({ id: entry.id, first_seen_at: nowIso_(), attempts: 0 }, meta,
         { status: extractable ? STATUS.QUEUED : STATUS.NAME_ONLY }));
       result.added++;
       return;
@@ -112,7 +111,6 @@ function applyListing_(files, listing) {
 
 /** แตกข้อความไฟล์ในคิวจนกว่าจะใกล้หมดเวลา */
 function processQueue_(files, started) {
-  const source = getSource_();
   const out = { extracted: 0, failed: 0 };
   const queue = files.filter((f) => f.status === STATUS.QUEUED)
     .sort((a, b) => b.modified_at.localeCompare(a.modified_at)); // ไฟล์ใหม่ก่อน
@@ -120,8 +118,7 @@ function processQueue_(files, started) {
     if (Date.now() - started > MAX_RUNTIME_MS) break;
     const key = row.change_key;
     try {
-      const blob = downloadItem_(source.driveId, row.id);
-      const text = extractText_(blob, row.ext).replace(/\r\n?/g, '\n').trim();
+      const text = extractFromSource_(row).replace(/\r\n?/g, '\n').trim();
       files.update(row, {
         text_file_id: saveText_(row, text),
         text_chars: text.length,

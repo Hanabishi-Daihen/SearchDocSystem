@@ -6,13 +6,13 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('🔎 SearchDocSystem')
     .addItem('1. ติดตั้ง / อัปเดตระบบ', 'menuInstall')
-    .addItem('2. ตั้งค่า (OneDrive, รหัสเข้าเว็บ)', 'menuSettings')
+    .addItem('2. ตั้งค่า (แหล่งเอกสาร, รหัสเข้าเว็บ)', 'menuSettings')
     .addItem('3. เปิดหน้าเว็บ', 'menuOpenWebApp')
     .addSeparator()
     .addItem('Sync ตอนนี้', 'menuSync')
     .addItem('ลองแตกข้อความไฟล์ที่ล้มเหลวใหม่', 'menuRetryFailed')
     .addSubMenu(ui.createMenu('ทดสอบ')
-      .addItem('เชื่อมต่อ OneDrive', 'menuTestConnection')
+      .addItem('เชื่อมต่อแหล่งเอกสาร', 'menuTestConnection')
       .addItem('แตกข้อความ (OCR) ไฟล์แรก', 'menuTestExtract'))
     .addToUi();
 }
@@ -28,7 +28,7 @@ function runMenu_(title, fn) {
 }
 
 function menuInstall() { runMenu_('ติดตั้งระบบ', () => setup()); }
-function menuTestConnection() { runMenu_('ทดสอบเชื่อมต่อ OneDrive', () => testConnection()); }
+function menuTestConnection() { runMenu_('ทดสอบเชื่อมต่อแหล่งเอกสาร', () => testConnection()); }
 function menuTestExtract() { runMenu_('ทดสอบแตกข้อความ', () => testExtract()); }
 
 function menuSync() {
@@ -65,11 +65,11 @@ function menuOpenWebApp() {
 // ---------- หน้าต่างตั้งค่า ----------
 
 const CONFIG_FIELDS = [
-  { key: 'TENANT_ID', label: 'Directory (tenant) ID — จาก IT', secret: false },
-  { key: 'CLIENT_ID', label: 'Application (client) ID — จาก IT', secret: false },
-  { key: 'CLIENT_SECRET', label: 'Client secret (Value) — จาก IT', secret: true },
-  { key: 'SOURCE', label: 'โฟลเดอร์ OneDrive: ลิงก์แชร์ หรือ อีเมล:/path', secret: false },
+  { key: 'SOURCE', label: 'แหล่งเอกสาร: ลิงก์โฟลเดอร์ Google Drive (หรือลิงก์ OneDrive)', secret: false },
   { key: 'SITE_PASSWORD', label: 'รหัสเข้าหน้าเว็บค้นหา (ไม่บังคับ)', secret: true },
+  { key: 'TENANT_ID', label: 'OneDrive เท่านั้น — Directory (tenant) ID', secret: false },
+  { key: 'CLIENT_ID', label: 'OneDrive เท่านั้น — Application (client) ID', secret: false },
+  { key: 'CLIENT_SECRET', label: 'OneDrive เท่านั้น — Client secret (Value)', secret: true },
 ];
 
 function menuSettings() {
@@ -94,7 +94,7 @@ function menuSettings() {
         button { height: 36px; padding: 0 18px; border: 0; border-radius: 8px; background: #cc785c; color: #fff; font-size: 14px; cursor: pointer; }
         #msg { margin-left: 10px; font-size: 13px; }
       </style>
-      <p>ใส่ค่าจาก IT ทีหลังได้ · ช่องรหัสที่เว้นว่างจะใช้ค่าเดิม · พิมพ์ - เพื่อลบรหัสเข้าเว็บ</p>
+      <p>ใช้โฟลเดอร์ Google Drive ไม่ต้องกรอก 3 ช่องล่าง · ช่องรหัสที่เว้นว่างจะใช้ค่าเดิม · พิมพ์ - เพื่อลบค่า</p>
       <form id="f">${fields}<button type="submit">บันทึก</button><span id="msg"></span></form>
       <script>
         document.getElementById('f').onsubmit = (e) => {

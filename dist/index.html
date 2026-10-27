@@ -68,8 +68,8 @@
   .card[aria-current="true"] { border-color: var(--primary); background: #fdfbf7; }
   .ficon { width: 40px; height: 48px; border-radius: 6px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px;
     font: 500 10px/1 var(--sans); color: #fff; letter-spacing: .5px; background: var(--muted-soft); }
-  .ficon.pdf { background: var(--primary); } .ficon.doc, .ficon.docx { background: #3d3d3a; }
-  .ficon.xls, .ficon.xlsx, .ficon.csv { background: var(--accent-teal); } .ficon.ppt, .ficon.pptx { background: var(--accent-amber); }
+  .ficon.pdf { background: var(--primary); } .ficon.doc, .ficon.docx, .ficon.gdoc { background: #3d3d3a; }
+  .ficon.xls, .ficon.xlsx, .ficon.csv, .ficon.gsheet { background: var(--accent-teal); } .ficon.ppt, .ficon.pptx, .ficon.gslides { background: var(--accent-amber); }
   .title { font: 500 18px/1.4 var(--sans); color: var(--ink); margin: 0; overflow-wrap: anywhere; }
   .path { font: 500 13px/1.4 var(--sans); color: var(--muted); margin: 2px 0 8px; overflow-wrap: anywhere; }
   .snip { font-size: 15px; color: var(--body); margin: 0 0 12px; overflow-wrap: anywhere; }
@@ -126,9 +126,9 @@
 </header>
 
 <section class="wrap hero">
-  <span class="eyebrow">OneDrive · Daihen</span>
+  <span class="eyebrow">Document Search · Daihen</span>
   <h1>ค้นหาเอกสารทั้งหมด<br>ในที่เดียว</h1>
-  <p class="lead">ค้นจากชื่อไฟล์ โฟลเดอร์ และเนื้อหาภายใน PDF, Word, Excel, PowerPoint — รวมถึงเอกสารสแกนภาษาไทย</p>
+  <p class="lead">ค้นจากชื่อไฟล์ โฟลเดอร์ และเนื้อหาภายใน PDF, Word, Excel, PowerPoint และไฟล์ Google — รวมถึงเอกสารสแกนภาษาไทย</p>
 
   <form class="searchbar" id="codeForm" hidden>
     <label class="input"><input id="code" type="password" placeholder="รหัสเข้าใช้งาน" autocomplete="current-password" aria-label="รหัสเข้าใช้งาน"></label>
@@ -160,17 +160,18 @@
 </div>
 
 <footer>
-  <div class="wrap"><strong>SearchDocSystem</strong> — ข้อมูลจาก OneDrive ผ่าน Google Apps Script · กด “เปิดใน OneDrive” เพื่อดูไฟล์ต้นฉบับ</div>
+  <div class="wrap"><strong>SearchDocSystem</strong> — ทำงานบน Google Apps Script · กด “เปิดไฟล์ต้นฉบับ” เพื่อดูไฟล์จริง</div>
 </footer>
 
 <script>
-const TYPES = [['all', 'ทั้งหมด'], ['pdf', 'PDF', ['pdf']], ['word', 'Word', ['doc', 'docx']], ['excel', 'Excel', ['xls', 'xlsx', 'csv']],
-  ['ppt', 'PowerPoint', ['ppt', 'pptx']], ['other', 'อื่น ๆ']];
-const KNOWN = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx']);
+const TYPES = [['all', 'ทั้งหมด'], ['pdf', 'PDF', ['pdf']], ['word', 'Word / Docs', ['doc', 'docx', 'gdoc']],
+  ['excel', 'Excel / Sheets', ['xls', 'xlsx', 'csv', 'gsheet']], ['ppt', 'PowerPoint / Slides', ['ppt', 'pptx', 'gslides']], ['other', 'อื่น ๆ']];
+const KNOWN = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx', 'gdoc', 'gsheet', 'gslides']);
+const EXT_LABEL = { gdoc: 'DOCS', gsheet: 'SHEET', gslides: 'SLIDE' };
 const PAGE = 30;
 const DB_NAME = 'searchdocsystem';
 
-const state = { token: '', docs: [], q: '', type: 'all', folder: '', selected: null, limit: PAGE, fullText: {} };
+const state = { token: '', source: '', docs: [], q: '', type: 'all', folder: '', selected: null, limit: PAGE, fullText: {} };
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -327,16 +328,16 @@ function render() {
 
   $('meta').textContent = state.q ? `พบ ${rows.length.toLocaleString()} ไฟล์สำหรับ “${state.q}”` : `ไฟล์ล่าสุด · ทั้งหมด ${rows.length.toLocaleString()} ไฟล์`;
   if (!state.docs.length) {
-    $('results').innerHTML = '<div class="empty"><h3>ยังไม่มีข้อมูล</h3><p>ระบบกำลัง sync ไฟล์จาก OneDrive ครั้งแรก ลองเปิดหน้านี้ใหม่ในอีกสักครู่</p></div>';
+    $('results').innerHTML = '<div class="empty"><h3>ยังไม่มีข้อมูล</h3><p>ระบบกำลัง sync ไฟล์ครั้งแรก ลองเปิดหน้านี้ใหม่ในอีกสักครู่</p></div>';
   } else if (!rows.length) {
     $('results').innerHTML = '<div class="empty"><h3>ไม่พบเอกสาร</h3><p>ลองใช้คำที่สั้นลง ตรวจตัวสะกด หรือเลือก “ทั้งหมด” / “ทุกโฟลเดอร์”</p></div>';
   } else {
     $('results').innerHTML = rows.slice(0, state.limit).map(({ d, hits }) => `
       <button class="card" data-id="${esc(d.i)}" aria-current="${state.selected === d.i}">
-        <span class="ficon ${esc(d.e)}">${esc((d.e || '?').toUpperCase().slice(0, 4))}</span>
+        <span class="ficon ${esc(d.e)}">${esc(EXT_LABEL[d.e] || (d.e || '?').toUpperCase().slice(0, 4))}</span>
         <span>
           <p class="title">${highlight(d.n, d.nn, terms)}</p>
-          <p class="path">OneDrive${d.p ? ' / ' + highlight(d.p, d.np, terms).replace(/\//g, ' / ') : ''}</p>
+          <p class="path">${esc(state.source)}${d.p ? ' / ' + highlight(d.p, d.np, terms).replace(/\//g, ' / ') : ''}</p>
           ${d.t ? `<p class="snip">${snippet(d.t, terms)}</p>` : ''}
           <span class="badges"><span class="pill">แก้ไข ${fmtDate(d.m)}</span>${d.b ? `<span class="pill">${esc(d.b)}</span>` : ''}
           ${hits ? `<span class="pill hit">พบในเนื้อหา ${hits} ครั้ง</span>` : ''}
@@ -358,12 +359,12 @@ function renderPreview(terms) {
   const truncated = full == null && !!d.k;
   p.innerHTML = `
     <h2>${esc(d.n)}</h2>
-    <div class="sub">OneDrive${d.p ? ' / ' + esc(d.p) : ''}</div>
-    <dl class="kv"><dt>แก้ไขล่าสุด</dt><dd>${fmtDate(d.m)}${d.b ? ' โดย ' + esc(d.b) : ''}</dd><dt>ขนาด</dt><dd>${fmtSize(d.s)}</dd>
-      <dt>ชนิด</dt><dd>${esc((d.e || '-').toUpperCase())}</dd></dl>
+    <div class="sub">${esc(state.source)}${d.p ? ' / ' + esc(d.p) : ''}</div>
+    <dl class="kv"><dt>แก้ไขล่าสุด</dt><dd>${fmtDate(d.m)}${d.b ? ' โดย ' + esc(d.b) : ''}</dd>${d.s ? `<dt>ขนาด</dt><dd>${fmtSize(d.s)}</dd>` : ''}
+      <dt>ชนิด</dt><dd>${esc(EXT_LABEL[d.e] ? 'Google ' + { gdoc: 'Docs', gsheet: 'Sheets', gslides: 'Slides' }[d.e] : (d.e || '-').toUpperCase())}</dd></dl>
     <div class="textbox">${text ? highlight(text, text, terms) : (d.k ? '(ไม่พบข้อความในไฟล์)' : 'ยังไม่ได้อ่านเนื้อหาไฟล์นี้ — ค้นหาได้จากชื่อไฟล์')}</div>
     <div class="actions">
-      ${d.u ? `<a class="btn-sm primary" href="${esc(d.u)}" target="_blank" rel="noopener">เปิดใน OneDrive</a>` : ''}
+      ${d.u ? `<a class="btn-sm primary" href="${esc(d.u)}" target="_blank" rel="noopener">เปิดไฟล์ต้นฉบับ</a>` : ''}
       ${truncated ? '<button class="btn-sm dark" id="loadFull">ดูข้อความทั้งหมด</button>' : ''}
       <button class="btn-sm dark close" id="close">ปิด</button>
     </div>`;
@@ -380,6 +381,7 @@ async function start() {
   showError('');
   try {
     const info = await call('getAppInfo');
+    state.source = info.source || '';
     renderSync(info);
     state.token = safeSession((s) => s.getItem('sds_token')) || '';
     if (info.needCode && !state.token) { $('codeForm').hidden = false; $('code').focus(); return; }

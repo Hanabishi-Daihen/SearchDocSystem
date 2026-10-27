@@ -11,6 +11,7 @@ function getAppInfo() {
   try { lastSync = JSON.parse(props_().getProperty('LAST_SYNC') || '{}'); } catch (e) { /* ยังไม่เคย sync */ }
   return {
     name: APP_NAME,
+    source: sourceLabel_(getSourceKind_()),
     needCode: !!props_().getProperty('SITE_PASSWORD'),
     indexVersion: manifest.version || '',
     count: manifest.count || 0,

@@ -1,8 +1,8 @@
 /**
  * ติดตั้งระบบและฟังก์ชันทดสอบ — เรียกจากเมนูใน Google Sheet (Menu.js) หรือจาก Apps Script editor
  *   setup()            สร้าง sheet, โฟลเดอร์ใน Drive และ trigger — รันซ้ำได้ ไม่ลบข้อมูลเดิม
- *   testConnection()   ทดสอบ Graph API + อ่านรายการไฟล์
- *   testExtract()      ทดสอบดาวน์โหลด + แตกข้อความไฟล์แรกที่รองรับ
+ *   testConnection()   ทดสอบเปิดโฟลเดอร์แหล่งเอกสาร + อ่านรายการไฟล์
+ *   testExtract()      ทดสอบแตกข้อความ PDF ไฟล์แรก (หรือไฟล์แรกที่รองรับ)
  */
 
 function setup() {
@@ -49,13 +49,15 @@ function setup() {
   log_('INFO', `setup เสร็จ: sync ทุก ${minutes} นาที`);
   flushLogs_();
 
-  const need = ['TENANT_ID', 'CLIENT_ID', 'CLIENT_SECRET', 'SOURCE'].filter((k) => !p.getProperty(k));
+  const need = getSourceKind_() === 'onedrive' && p.getProperty('SOURCE')
+    ? ['TENANT_ID', 'CLIENT_ID', 'CLIENT_SECRET'].filter((k) => !p.getProperty(k))
+    : (p.getProperty('SOURCE') ? [] : ['แหล่งเอกสาร (ลิงก์โฟลเดอร์ Google Drive)']);
   return [
     '✅ ติดตั้งเสร็จแล้ว',
     `• sheet: ${Object.keys(SCHEMA).join(', ')}`,
-    `• โฟลเดอร์ใน Google Drive: ${root.getUrl()}`,
+    `• โฟลเดอร์ของระบบใน Google Drive: ${root.getUrl()}`,
     `• Sync อัตโนมัติทุก ${minutes} นาที`,
-    need.length ? `\nขั้นต่อไป: เมนู "2. ตั้งค่า" — ยังไม่ได้ใส่ ${need.join(', ')}` : '\nขั้นต่อไป: เมนู "ทดสอบ → เชื่อมต่อ OneDrive"',
+    need.length ? `\nขั้นต่อไป: เมนู "2. ตั้งค่า" — ยังไม่ได้ใส่ ${need.join(', ')}` : '\nขั้นต่อไป: เมนู "ทดสอบ → เชื่อมต่อแหล่งเอกสาร"',
   ].join('\n');
 }
 
@@ -71,31 +73,34 @@ function ensureFolder_(id, parent, name) {
 
 function testConnection() {
   requireOwner_();
-  graphToken_(true);
-  const lines = ['✅ ขอ token จาก Microsoft Entra ID สำเร็จ'];
-  const source = getSource_();
-  lines.push(`✅ เปิดโฟลเดอร์ได้: "${source.name}"`);
-  const items = listAllFiles_(source);
+  const lines = [];
+  const kind = getSourceKind_();
+  if (kind === 'onedrive') {
+    graphToken_(true);
+    lines.push('✅ ขอ token จาก Microsoft Entra ID สำเร็จ');
+  }
+  const source = describeSource_();
+  lines.push(`✅ เปิดโฟลเดอร์ ${sourceLabel_(kind)} ได้: "${source.name}"`);
+  const items = listSource_();
   const exts = getSettings_().fileExtensions;
-  const supported = items.filter(({ item }) => exts.includes((item.name.split('.').pop() || '').toLowerCase())).length;
-  lines.push(`พบ ${items.length} ไฟล์ (แตกเนื้อหาได้ ${supported} ไฟล์)${items.length > 15 ? ' — แสดง 15 ไฟล์แรก' : ''}:`, '');
-  items.slice(0, 15).forEach(({ item, path }) => lines.push(`• ${path ? path + '/' : ''}${item.name}`));
+  const supported = items.filter((f) => exts.includes(f.ext)).length;
+  lines.push(`พบ ${items.length} ไฟล์ (อ่านเนื้อหาได้ ${supported} ไฟล์)${items.length > 15 ? ' — แสดง 15 ไฟล์แรก' : ''}:`, '');
+  items.slice(0, 15).forEach((f) => lines.push(`• ${f.path ? f.path + '/' : ''}${f.name}`));
   return lines.join('\n');
 }
 
 function testExtract() {
   requireOwner_();
-  const source = getSource_();
   const exts = getSettings_().fileExtensions;
-  const found = listAllFiles_(source).find(({ item }) => exts.includes((item.name.split('.').pop() || '').toLowerCase()));
-  if (!found) throw new Error('ไม่พบไฟล์ชนิดที่รองรับในโฟลเดอร์');
-  const { item } = found;
+  const files = listSource_().filter((f) => exts.includes(f.ext));
+  const file = files.find((f) => f.ext === 'pdf') || files[0];
+  if (!file) throw new Error('ไม่พบไฟล์ชนิดที่รองรับในโฟลเดอร์');
   const started = Date.now();
-  const text = extractText_(downloadItem_(source.driveId, item.id), item.name.split('.').pop().toLowerCase());
+  const text = extractFromSource_(file);
   const chars = Array.from(text.replace(/\s/g, ''));
-  const thai = chars.filter((c) => /[฀-๿]/.test(c)).length;
+  const thai = chars.filter((c) => /[\u0e00-\u0e7f]/.test(c)).length;
   return [
-    `ไฟล์: ${item.name} (${(item.size / 1024 / 1024).toFixed(2)} MB)`,
+    `ไฟล์: ${file.name}${file.size ? ` (${(file.size / 1024 / 1024).toFixed(2)} MB)` : ''}`,
     `ใช้เวลา ${((Date.now() - started) / 1000).toFixed(1)} วินาที · ได้ ${text.length.toLocaleString()} ตัวอักษร ` +
       `(ภาษาไทย ${chars.length ? Math.round(thai / chars.length * 100) : 0}%)`,
     '',

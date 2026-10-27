@@ -17,7 +17,7 @@ const DIST = path.join(ROOT, 'dist');
 
 // ลำดับไฟล์ใน Code.gs (ใน GAS ทุกไฟล์อยู่ global scope เดียวกัน ลำดับมีผลแค่การอ่าน)
 const SERVER_FILES = [
-  'Config.js', 'Repo.js', 'Graph.js', 'Extract.js', 'Sync.js', 'SearchIndex.js',
+  'Config.js', 'Repo.js', 'Source.js', 'Graph.js', 'Extract.js', 'Sync.js', 'SearchIndex.js',
   'Api.js', 'WebApp.js', 'Menu.js', 'Setup.js',
 ];
 

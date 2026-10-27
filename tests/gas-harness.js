@@ -137,6 +137,36 @@ class FakeOneDrive {
   }
 }
 
+/** Google Drive จำลอง (แหล่งเอกสาร): โฟลเดอร์ + ไฟล์ทั่วไป + ไฟล์ Google */
+class FakeGDrive {
+  constructor() {
+    this.items = new Map();
+    this.add({ id: 'GROOT_FOLDER_ID_0000001', name: 'เอกสาร QA', mimeType: 'application/vnd.google-apps.folder', parent: null });
+    this.reads = 0;
+  }
+  add({ id, name, mimeType = 'application/pdf', parent = 'GROOT_FOLDER_ID_0000001', content = '', modified = '2026-10-01T00:00:00Z', trashed = false }) {
+    this.items.set(id, { id, name, mimeType, parent, content, modified, trashed });
+  }
+  edit(id, content, modified) { Object.assign(this.items.get(id), { content, modified: modified || '2026-10-26T00:00:00Z' }); }
+  isNative(it) { return /google-apps\.(document|spreadsheet|presentation)$/.test(it.mimeType); }
+  toJson(it) {
+    const j = { id: it.id, name: it.name, mimeType: it.mimeType, modifiedTime: it.modified,
+      webViewLink: `https://drive.google.com/file/d/${it.id}/view`, lastModifyingUser: { displayName: 'สุภัสสา' } };
+    if (!it.mimeType.includes('google-apps')) {
+      j.size = String(Buffer.byteLength(it.content));
+      j.md5Checksum = crypto.createHash('md5').update(it.content).digest('hex');
+    }
+    return j;
+  }
+  list({ q, pageToken }) {
+    const parent = q.match(/'([^']+)' in parents/)[1];
+    const all = [...this.items.values()].filter((i) => i.parent === parent && !i.trashed);
+    const start = Number(pageToken || 0);
+    const page = all.slice(start, start + 2); // หน้าละ 2 รายการ เพื่อทดสอบ nextPageToken
+    return { files: page.map((i) => this.toJson(i)), nextPageToken: start + 2 < all.length ? String(start + 2) : undefined };
+  }
+}
+
 /** source: 'src' = โหลด gas/*.js ทีละไฟล์, 'dist' = โหลด dist/Code.gs ที่ build แล้ว */
 function createGas({ source = 'src' } = {}) {
   const ss = new FakeSpreadsheet();
@@ -150,6 +180,8 @@ function createGas({ source = 'src' } = {}) {
     text.split('\n').map((l) => l.split(',')) }) }] });
   const triggers = [];
   const onedrive = new FakeOneDrive();
+  const gdrive = new FakeGDrive();
+  const nativeText = (id) => { const it = gdrive.items.get(id); return it && gdrive.isNative(it) ? it.content : null; };
   let idSeq = 0;
 
   const makeFile = (blob, name) => {
@@ -184,11 +216,12 @@ function createGas({ source = 'src' } = {}) {
   const ctx = {
     console: { log() {}, warn() {}, error: console.error },
     SpreadsheetApp: {
-      openById: (id) => (converted.has(id) ? fakeConvertedSheet(converted.get(id)) : ss),
+      openById: (id) => (converted.has(id) ? fakeConvertedSheet(converted.get(id))
+        : nativeText(id) !== null ? fakeConvertedSheet(nativeText(id)) : ss),
       getActiveSpreadsheet: () => ss,
     },
     SlidesApp: { openById: (id) => ({ getSlides: () => [{ getShapes: () => [
-      { getText: () => ({ asString: () => converted.get(id) }) }, { getText: () => { throw new Error('no text'); } }] }] }) },
+      { getText: () => ({ asString: () => (converted.has(id) ? converted.get(id) : nativeText(id)) }) }, { getText: () => { throw new Error('no text'); } }] }] }) },
     PropertiesService: { getScriptProperties: () => ({
       getProperty: (k) => (props.has(k) ? props.get(k) : null),
       setProperty: (k, v) => props.set(k, String(v)),
@@ -238,7 +271,15 @@ function createGas({ source = 'src' } = {}) {
       Permission: { VIEW: 'VIEW' },
       createFolder: (n) => makeFolder(n),
       getFolderById: (id) => driveFiles.get(id),
-      getFileById: (id) => { const f = driveFiles.get(id); if (!f) throw new Error('no file ' + id); return f; },
+      getFileById: (id) => {
+        const f = driveFiles.get(id);
+        if (f) return f;
+        const it = gdrive.items.get(id);
+        if (it && !gdrive.isNative(it)) {
+          return { getBlob: () => { gdrive.reads++; return new FakeBlob(Buffer.from(it.content), it.mimeType, it.name); } };
+        }
+        throw new Error('no file ' + id);
+      },
     },
     Drive: { Files: {
       create: (meta, blob, opts) => {
@@ -250,8 +291,14 @@ function createGas({ source = 'src' } = {}) {
         return { id };
       },
       remove: (id) => { converted.delete(id); },
+      list: (opts) => gdrive.list(opts),
+      get: (id) => {
+        const it = gdrive.items.get(id);
+        if (!it) throw new Error('File not found: ' + id);
+        return gdrive.toJson(it);
+      },
     } },
-    DocumentApp: { openById: (id) => ({ getBody: () => ({ getText: () => converted.get(id) }) }) },
+    DocumentApp: { openById: (id) => ({ getBody: () => ({ getText: () => (converted.has(id) ? converted.get(id) : nativeText(id)) }) }) },
     MimeType: { GOOGLE_DOCS: 'application/vnd.google-apps.document', PDF: 'application/pdf', PLAIN_TEXT: 'text/plain' },
     HtmlService: { createHtmlOutputFromFile: (n) => {
       const o = { file: n, setTitle: () => o, addMetaTag: () => o };
@@ -269,7 +316,7 @@ function createGas({ source = 'src' } = {}) {
   }
   // ล้าง cache ค่าตั้งค่าระหว่างการเรียกแต่ละครั้ง (GAS จริงเริ่มใหม่ทุก execution)
   const run = (code) => vm.runInContext(`settingsCache_ = null; ${code}`, ctx);
-  return { ctx, ss, props, onedrive, triggers, driveFiles, run, convertCalls, cache };
+  return { ctx, ss, props, onedrive, gdrive, triggers, driveFiles, run, convertCalls, cache };
 }
 
 module.exports = { createGas, FakeBlob };

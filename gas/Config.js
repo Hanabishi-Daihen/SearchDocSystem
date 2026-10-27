@@ -6,7 +6,7 @@
  *   SOURCE             โฟลเดอร์ OneDrive: ลิงก์แชร์ หรือ อีเมลเจ้าของ:/path เช่น user@daihen.co.th:/Documents/QA
  *   SITE_PASSWORD      (ไม่บังคับ) รหัสเข้าหน้าเว็บค้นหา — เว้นว่าง = ใครมีลิงก์เว็บก็ค้นได้
  *   SPREADSHEET_ID, DRIVE_ROOT_ID, TEXT_FOLDER_ID, INDEX_FOLDER_ID, TMP_FOLDER_ID,
- *   INDEX_MANIFEST, LAST_SYNC  — ระบบตั้งให้เอง
+ *   SOURCE_DRIVE_ID, SOURCE_ITEM_ID, INDEX_MANIFEST, LAST_SYNC  — ระบบตั้งให้เอง
  */
 
 const APP_NAME = 'SearchDocSystem';

@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="th">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500&family=Inter:wght@400;500&family=JetBrains+Mono&family=Noto+Serif+Thai:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --primary: #cc785c; --primary-active: #a9583e; --primary-disabled: #e6dfd8;
+    --ink: #141413; --body: #3d3d3a; --muted: #6c6a64; --muted-soft: #8e8b82;
+    --hairline: #e6dfd8; --hairline-soft: #ebe6df;
+    --canvas: #faf9f5; --surface-card: #efe9de;
+    --surface-dark: #181715; --surface-dark-elevated: #252320; --surface-dark-soft: #1f1e1b;
+    --on-primary: #fff; --on-dark: #faf9f5; --on-dark-soft: #a09d96;
+    --accent-teal: #5db8a6; --accent-amber: #e8a55a; --error: #c64545;
+    --serif: "Noto Serif Thai", "Tiempos Headline", Garamond, serif;
+    --sans: Inter, "IBM Plex Sans Thai", -apple-system, "Segoe UI", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--canvas); color: var(--body); font: 400 16px/1.55 var(--sans); }
+  a { color: var(--primary); }
+  button { font: inherit; cursor: pointer; }
+  [hidden] { display: none !important; }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+
+  .nav { height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); font: 500 16px/1 var(--sans); }
+  .sync { display: flex; align-items: center; gap: 8px; color: var(--muted); font: 500 14px/1.4 var(--sans); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-teal); flex: none; }
+  .dot.bad { background: var(--error); }
+
+  .hero { padding: 64px 0 24px; }
+  .eyebrow { display: inline-block; background: var(--primary); color: var(--on-primary); font: 500 12px/1.4 var(--sans);
+    letter-spacing: 1.5px; text-transform: uppercase; border-radius: 9999px; padding: 4px 12px; }
+  h1 { font: 400 56px/1.1 var(--serif); letter-spacing: -1.2px; color: var(--ink); margin: 20px 0 12px; }
+  .lead { color: var(--muted); font-size: 18px; max-width: 640px; margin: 0 0 32px; }
+  .searchbar { display: flex; gap: 12px; max-width: 820px; }
+  .input { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; background: var(--canvas); border: 1px solid var(--hairline);
+    border-radius: 8px; padding: 0 14px; height: 52px; }
+  .input:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(204,120,92,.15); }
+  .input input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: 400 17px/1 var(--sans); }
+  .kbd { font: 400 12px/1 var(--mono); color: var(--muted-soft); border: 1px solid var(--hairline); border-radius: 4px; padding: 3px 6px; }
+  .btn { height: 52px; padding: 0 22px; border: 0; border-radius: 8px; background: var(--primary); color: var(--on-primary); font: 500 14px/1 var(--sans); }
+  .btn:active { background: var(--primary-active); }
+  .btn:disabled { background: var(--primary-disabled); color: var(--muted); }
+  .hint { margin-top: 12px; font-size: 13px; color: var(--muted-soft); }
+  .hint code { font-family: var(--mono); background: var(--surface-card); padding: 1px 6px; border-radius: 4px; color: var(--body); }
+  .err { color: var(--error); font-size: 14px; margin-top: 10px; }
+
+  .loading { max-width: 820px; margin-top: 16px; font-size: 13px; color: var(--muted); }
+  .bar { height: 4px; background: var(--surface-card); border-radius: 9999px; overflow: hidden; margin-top: 6px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--primary); transition: width .2s; }
+
+  .filters { display: flex; gap: 4px; overflow-x: auto; padding: 24px 0 8px; border-bottom: 1px solid var(--hairline-soft); scrollbar-width: none; }
+  .tab { border: 0; background: transparent; color: var(--muted); font: 500 14px/1.4 var(--sans); padding: 8px 14px; border-radius: 8px; white-space: nowrap; }
+  .tab[aria-pressed="true"] { background: var(--surface-card); color: var(--ink); }
+  .tab .n { color: var(--muted-soft); margin-left: 4px; }
+  .sel { margin-left: auto; border: 1px solid var(--hairline); background: var(--canvas); color: var(--ink); border-radius: 8px; padding: 0 10px; height: 36px; font: 500 14px var(--sans); max-width: 200px; }
+
+  .main { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 32px; padding: 24px 0 96px; }
+  .meta { font: 500 13px/1.4 var(--sans); color: var(--muted); margin-bottom: 12px; }
+  .results { display: flex; flex-direction: column; gap: 12px; }
+  .card { text-align: left; width: 100%; background: var(--canvas); border: 1px solid var(--hairline); border-radius: 12px; padding: 20px 24px;
+    display: grid; grid-template-columns: 40px minmax(0,1fr); gap: 16px; color: inherit; }
+  .card[aria-current="true"] { border-color: var(--primary); background: #fdfbf7; }
+  .ficon { width: 40px; height: 48px; border-radius: 6px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px;
+    font: 500 10px/1 var(--sans); color: #fff; letter-spacing: .5px; background: var(--muted-soft); }
+  .ficon.pdf { background: var(--primary); } .ficon.doc, .ficon.docx { background: #3d3d3a; }
+  .ficon.xls, .ficon.xlsx, .ficon.csv { background: var(--accent-teal); } .ficon.ppt, .ficon.pptx { background: var(--accent-amber); }
+  .title { font: 500 18px/1.4 var(--sans); color: var(--ink); margin: 0; overflow-wrap: anywhere; }
+  .path { font: 500 13px/1.4 var(--sans); color: var(--muted); margin: 2px 0 8px; overflow-wrap: anywhere; }
+  .snip { font-size: 15px; color: var(--body); margin: 0 0 12px; overflow-wrap: anywhere; }
+  mark { background: rgba(232,165,90,.32); color: var(--ink); border-radius: 3px; padding: 0 2px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill { background: var(--surface-card); color: var(--ink); font: 500 13px/1.4 var(--sans); border-radius: 9999px; padding: 3px 12px; }
+  .pill.hit { background: transparent; border: 1px solid var(--hairline); color: var(--muted); }
+  .more { align-self: center; margin-top: 8px; height: 40px; padding: 0 20px; border: 1px solid var(--hairline); background: var(--canvas); color: var(--ink); border-radius: 8px; font: 500 14px var(--sans); }
+
+  .empty { background: var(--surface-card); border-radius: 12px; padding: 32px; }
+  .empty h3 { font: 400 28px/1.2 var(--serif); letter-spacing: -.3px; color: var(--ink); margin: 0 0 8px; }
+
+  .preview { position: sticky; top: 16px; align-self: start; background: var(--surface-dark); color: var(--on-dark); border-radius: 12px; padding: 24px;
+    max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+  .preview h2 { font: 400 24px/1.25 var(--serif); letter-spacing: -.3px; margin: 0 0 4px; overflow-wrap: anywhere; }
+  .preview .sub { color: var(--on-dark-soft); font-size: 13px; margin-bottom: 16px; overflow-wrap: anywhere; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; font-size: 13px; margin: 0 0 16px; }
+  .kv dt { color: var(--on-dark-soft); } .kv dd { margin: 0; }
+  .textbox { background: var(--surface-dark-soft); border-radius: 8px; padding: 16px; font: 400 13px/1.7 var(--mono); color: var(--on-dark-soft);
+    overflow: auto; flex: 1; min-height: 120px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .textbox mark { background: var(--primary); color: #fff; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .btn-sm { height: 40px; padding: 0 16px; border-radius: 8px; border: 0; font: 500 14px/1 var(--sans); text-decoration: none; display: inline-flex; align-items: center; }
+  .btn-sm.primary { background: var(--primary); color: #fff; } .btn-sm.dark { background: var(--surface-dark-elevated); color: var(--on-dark); }
+  .close { display: none; }
+
+  footer { background: var(--surface-dark); color: var(--on-dark-soft); font-size: 14px; padding: 48px 0; }
+  footer strong { color: var(--on-dark); font-weight: 500; }
+
+  @media (max-width: 960px) {
+    .main { grid-template-columns: 1fr; }
+    .preview { display: none; position: fixed; inset: 0; align-self: stretch; border-radius: 0; max-height: none; z-index: 10; }
+    .preview.open { display: flex; }
+    .close { display: inline-flex; }
+  }
+  @media (max-width: 767px) {
+    .hero { padding: 32px 0 16px; }
+    h1 { font-size: 34px; letter-spacing: -.5px; }
+    .lead { font-size: 16px; }
+    .searchbar .btn { padding: 0 16px; }
+    .kbd, .sync span { display: none; }
+    .card { padding: 16px; grid-template-columns: 32px minmax(0,1fr); gap: 12px; }
+    .ficon { width: 32px; height: 40px; }
+  }
+</style>
+</head>
+<body>
+<header class="wrap nav">
+  <div class="brand">
+    <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect x="5" y="3" width="15" height="20" rx="2" fill="none" stroke="#141413" stroke-width="1.6"/><circle cx="17" cy="17" r="5" fill="#faf9f5" stroke="#cc785c" stroke-width="1.8"/><path d="M20.6 20.6 24 24" stroke="#cc785c" stroke-width="2" stroke-linecap="round"/><path d="M8.5 8h8M8.5 11.5h5" stroke="#141413" stroke-width="1.4" stroke-linecap="round"/></svg>
+    SearchDocSystem
+  </div>
+  <div class="sync" id="sync"></div>
+</header>
+
+<section class="wrap hero">
+  <span class="eyebrow">OneDrive · Daihen</span>
+  <h1>ค้นหาเอกสารทั้งหมด<br>ในที่เดียว</h1>
+  <p class="lead">ค้นจากชื่อไฟล์ โฟลเดอร์ และเนื้อหาภายใน PDF, Word, Excel, PowerPoint — รวมถึงเอกสารสแกนภาษาไทย</p>
+
+  <form class="searchbar" id="codeForm" hidden>
+    <label class="input"><input id="code" type="password" placeholder="รหัสเข้าใช้งาน" autocomplete="current-password" aria-label="รหัสเข้าใช้งาน"></label>
+    <button class="btn" type="submit">เข้าใช้งาน</button>
+  </form>
+
+  <form class="searchbar" id="form" role="search" hidden>
+    <label class="input">
+      <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="#6c6a64" stroke-width="2"/><path d="m20 20-4-4" stroke="#6c6a64" stroke-width="2" stroke-linecap="round"/></svg>
+      <input id="q" type="search" placeholder="เช่น ตรวจรับวัตถุดิบ, QC checklist, ใบขอซื้อ" autocomplete="off" aria-label="คำค้นหา">
+      <span class="kbd">/</span>
+    </label>
+    <button class="btn" type="submit">ค้นหา</button>
+  </form>
+  <div class="hint" id="hint" hidden>หลายคำ = ต้องเจอทุกคำ · <code>"วลีตรงตัว"</code> · <code>-คำที่ไม่เอา</code></div>
+  <div class="loading" id="loading" hidden><span id="loadingText">กำลังโหลด…</span><div class="bar"><i id="barFill"></i></div></div>
+  <div class="err" id="err" hidden></div>
+</section>
+
+<div class="wrap" id="app" hidden>
+  <div class="filters" id="filters"></div>
+  <div class="main">
+    <div>
+      <div class="meta" id="meta"></div>
+      <div class="results" id="results"></div>
+    </div>
+    <aside class="preview" id="preview" aria-live="polite"></aside>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap"><strong>SearchDocSystem</strong> — ข้อมูลจาก OneDrive ผ่าน Google Apps Script · กด “เปิดใน OneDrive” เพื่อดูไฟล์ต้นฉบับ</div>
+</footer>
+
+<script>
+const TYPES = [['all', 'ทั้งหมด'], ['pdf', 'PDF', ['pdf']], ['word', 'Word', ['doc', 'docx']], ['excel', 'Excel', ['xls', 'xlsx', 'csv']],
+  ['ppt', 'PowerPoint', ['ppt', 'pptx']], ['other', 'อื่น ๆ']];
+const KNOWN = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'ppt', 'pptx']);
+const PAGE = 30;
+const DB_NAME = 'searchdocsystem';
+
+const state = { token: '', docs: [], q: '', type: 'all', folder: '', selected: null, limit: PAGE, fullText: {} };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ---------- เรียก server ----------
+function call(name, ...args) {
+  return new Promise((resolve, reject) => {
+    google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[name](...args);
+  });
+}
+function showError(msg) { $('err').hidden = !msg; $('err').textContent = msg || ''; }
+function safeSession(fn) { try { return fn(window.sessionStorage); } catch (e) { return null; } }
+
+// ---------- normalize (ตรงกับ normalizeText_ ใน Config.gs) ----------
+// สำหรับชื่อไฟล์ใช้แบบรักษาความยาว เพื่อ highlight บนข้อความเดิมได้
+function normKeepLength(s) {
+  return String(s).toLowerCase().replace(/[๐-๙]/g, (d) => String(d.charCodeAt(0) - 0x0e50)).replace(/\s/g, ' ');
+}
+function normQuery(s) {
+  return String(s).normalize('NFC').toLowerCase().replace(/[​-‍﻿]/g, '')
+    .replace(/[๐-๙]/g, (d) => String(d.charCodeAt(0) - 0x0e50)).replace(/\s+/g, ' ').trim();
+}
+function parseQuery(q) {
+  const must = [], not = [];
+  q.replace(/(-?)"([^"]+)"|(-?)(\S+)/g, (_, n1, phrase, n2, word) => {
+    const term = normQuery(phrase || word);
+    if (term) ((n1 || n2) ? not : must).push(term);
+  });
+  return { must, not };
+}
+function countHits(hay, term) { let n = 0, i = 0; while ((i = hay.indexOf(term, i)) !== -1) { n++; i += term.length; } return n; }
+function typeOf(ext) {
+  const t = TYPES.find(([, , exts]) => exts && exts.includes(ext));
+  return t ? t[0] : 'other';
+}
+
+// ---------- โหลด index ----------
+async function b64gunzip(b64) {
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Response(stream).text();
+}
+function idb(mode, fn) {
+  return new Promise((resolve) => {
+    try {
+      const open = indexedDB.open(DB_NAME, 1);
+      open.onupgradeneeded = () => open.result.createObjectStore('kv');
+      open.onerror = () => resolve(null);
+      open.onsuccess = () => {
+        const tx = open.result.transaction('kv', mode);
+        const req = fn(tx.objectStore('kv'));
+        tx.oncomplete = () => resolve(req && req.result);
+        tx.onerror = () => resolve(null);
+      };
+    } catch (e) { resolve(null); }
+  });
+}
+function prepare(docs) {
+  return docs.map((d) => {
+    d.n = String(d.n || '').normalize('NFC');
+    d.p = String(d.p || '').normalize('NFC');
+    d.nn = normKeepLength(d.n);
+    d.np = normKeepLength(d.p);
+    d.t = d.t || '';
+    d.top = d.p.split('/')[0] || '';
+    d.type = typeOf(d.e);
+    return d;
+  });
+}
+async function loadIndex(retry) {
+  const meta = await call('getIndexMeta', state.token);
+  if (!meta.version) return [];
+  const cached = await idb('readonly', (s) => s.get('index'));
+  if (cached && cached.version === meta.version) return cached.docs;
+  $('loading').hidden = false;
+  const useGzip = typeof DecompressionStream !== 'undefined';
+  let docs = [];
+  try {
+    for (let n = 0; n < meta.chunks; n++) {
+      $('loadingText').textContent = `กำลังโหลดข้อมูลค้นหา ${n + 1}/${meta.chunks} (ครั้งแรกอาจใช้เวลาสักครู่)`;
+      $('barFill').style.width = `${Math.round((n / meta.chunks) * 100)}%`;
+      const data = await call('getIndexChunk', state.token, meta.version, n, !useGzip);
+      docs = docs.concat(JSON.parse(useGzip ? await b64gunzip(data) : data));
+    }
+  } catch (err) {
+    if (/INDEX_CHANGED/.test(err.message) && !retry) return loadIndex(true);
+    throw err;
+  } finally {
+    $('loading').hidden = true;
+  }
+  idb('readwrite', (s) => s.put({ version: meta.version, docs }, 'index'));
+  return docs;
+}
+
+// ---------- ค้นหา ----------
+function search() {
+  const { must, not } = parseQuery(state.q);
+  const now = Date.now();
+  const out = [];
+  for (const d of state.docs) {
+    if (state.folder && d.top !== state.folder) continue;
+    if (not.length && not.some((t) => d.nn.includes(t) || d.np.includes(t) || d.t.includes(t))) continue;
+    let score = 0, hits = 0, ok = true;
+    for (const t of must) {
+      const inName = countHits(d.nn, t), inPath = countHits(d.np, t), inText = countHits(d.t, t);
+      if (!inName && !inPath && !inText) { ok = false; break; }
+      score += inName * 10 + inPath * 4 + (inText ? 1 + Math.log2(1 + inText) : 0);
+      hits += inText;
+    }
+    if (!ok) continue;
+    const age = d.m ? (now - Date.parse(d.m)) / (365 * 864e5) : 5;
+    score += Math.max(0, 1 - age);
+    out.push({ d, score, hits });
+  }
+  return must.length ? out.sort((a, b) => b.score - a.score) : out.sort((a, b) => String(b.d.m).localeCompare(String(a.d.m)));
+}
+function highlight(text, normText, terms) {
+  const ranges = [];
+  for (const t of terms) { let i = 0; while ((i = normText.indexOf(t, i)) !== -1) { ranges.push([i, i + t.length]); i += t.length; } }
+  ranges.sort((a, b) => a[0] - b[0]);
+  let html = '', pos = 0;
+  for (const [s, e] of ranges) { if (s < pos) continue; html += esc(text.slice(pos, s)) + '<mark>' + esc(text.slice(s, e)) + '</mark>'; pos = e; }
+  return html + esc(text.slice(pos));
+}
+function snippet(text, terms) {
+  if (!text) return '';
+  const idx = terms.map((t) => text.indexOf(t)).filter((i) => i >= 0);
+  if (!idx.length) return esc(text.slice(0, 160)) + (text.length > 160 ? '…' : '');
+  const first = Math.min(...idx), s = Math.max(0, first - 60), e = Math.min(text.length, first + 140);
+  const part = text.slice(s, e);
+  return (s ? '…' : '') + highlight(part, part, terms) + (e < text.length ? '…' : '');
+}
+function fmtDate(iso) {
+  const t = Date.parse(iso);
+  return isNaN(t) ? '-' : new Date(t).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function fmtSize(b) {
+  b = Number(b) || 0;
+  return b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;
+}
+
+// ---------- แสดงผล ----------
+function render() {
+  const all = search();
+  const counts = { all: all.length };
+  all.forEach((r) => (counts[r.d.type] = (counts[r.d.type] || 0) + 1));
+  const rows = all.filter((r) => state.type === 'all' || r.d.type === state.type);
+  const terms = parseQuery(state.q).must;
+
+  const folders = [...new Set(state.docs.map((d) => d.top).filter(Boolean))].sort();
+  $('filters').innerHTML = TYPES.filter(([k]) => k === 'all' || counts[k] || state.type === k).map(([k, label]) =>
+    `<button class="tab" data-type="${k}" aria-pressed="${state.type === k}">${label}<span class="n">${counts[k] || 0}</span></button>`).join('') +
+    (folders.length > 1 ? `<select class="sel" id="folder" aria-label="โฟลเดอร์"><option value="">ทุกโฟลเดอร์</option>${folders.map((f) =>
+      `<option value="${esc(f)}" ${f === state.folder ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select>` : '');
+
+  $('meta').textContent = state.q ? `พบ ${rows.length.toLocaleString()} ไฟล์สำหรับ “${state.q}”` : `ไฟล์ล่าสุด · ทั้งหมด ${rows.length.toLocaleString()} ไฟล์`;
+  if (!state.docs.length) {
+    $('results').innerHTML = '<div class="empty"><h3>ยังไม่มีข้อมูล</h3><p>ระบบกำลัง sync ไฟล์จาก OneDrive ครั้งแรก ลองเปิดหน้านี้ใหม่ในอีกสักครู่</p></div>';
+  } else if (!rows.length) {
+    $('results').innerHTML = '<div class="empty"><h3>ไม่พบเอกสาร</h3><p>ลองใช้คำที่สั้นลง ตรวจตัวสะกด หรือเลือก “ทั้งหมด” / “ทุกโฟลเดอร์”</p></div>';
+  } else {
+    $('results').innerHTML = rows.slice(0, state.limit).map(({ d, hits }) => `
+      <button class="card" data-id="${esc(d.i)}" aria-current="${state.selected === d.i}">
+        <span class="ficon ${esc(d.e)}">${esc((d.e || '?').toUpperCase().slice(0, 4))}</span>
+        <span>
+          <p class="title">${highlight(d.n, d.nn, terms)}</p>
+          <p class="path">OneDrive${d.p ? ' / ' + highlight(d.p, d.np, terms).replace(/\//g, ' / ') : ''}</p>
+          ${d.t ? `<p class="snip">${snippet(d.t, terms)}</p>` : ''}
+          <span class="badges"><span class="pill">แก้ไข ${fmtDate(d.m)}</span>${d.b ? `<span class="pill">${esc(d.b)}</span>` : ''}
+          ${hits ? `<span class="pill hit">พบในเนื้อหา ${hits} ครั้ง</span>` : ''}
+          ${!d.k && KNOWN.has(d.e) ? '<span class="pill hit">ยังไม่ได้อ่านเนื้อหา</span>' : ''}</span>
+        </span>
+      </button>`).join('') +
+      (rows.length > state.limit ? `<button class="more" id="more">แสดงเพิ่ม (${(rows.length - state.limit).toLocaleString()})</button>` : '');
+  }
+  if (!rows.slice(0, state.limit).some((r) => r.d.i === state.selected)) state.selected = rows.length ? rows[0].d.i : null;
+  document.querySelectorAll('.card').forEach((c) => c.setAttribute('aria-current', String(c.dataset.id === state.selected)));
+  renderPreview(terms);
+}
+
+function renderPreview(terms) {
+  const d = state.docs.find((x) => x.i === state.selected), p = $('preview');
+  if (!d) { p.innerHTML = '<div class="sub">เลือกเอกสารเพื่อดูตัวอย่าง</div>'; return; }
+  const full = state.fullText[d.i];
+  const text = full != null ? normQuery(full) : d.t;
+  const truncated = full == null && !!d.k;
+  p.innerHTML = `
+    <h2>${esc(d.n)}</h2>
+    <div class="sub">OneDrive${d.p ? ' / ' + esc(d.p) : ''}</div>
+    <dl class="kv"><dt>แก้ไขล่าสุด</dt><dd>${fmtDate(d.m)}${d.b ? ' โดย ' + esc(d.b) : ''}</dd><dt>ขนาด</dt><dd>${fmtSize(d.s)}</dd>
+      <dt>ชนิด</dt><dd>${esc((d.e || '-').toUpperCase())}</dd></dl>
+    <div class="textbox">${text ? highlight(text, text, terms) : (d.k ? '(ไม่พบข้อความในไฟล์)' : 'ยังไม่ได้อ่านเนื้อหาไฟล์นี้ — ค้นหาได้จากชื่อไฟล์')}</div>
+    <div class="actions">
+      ${d.u ? `<a class="btn-sm primary" href="${esc(d.u)}" target="_blank" rel="noopener">เปิดใน OneDrive</a>` : ''}
+      ${truncated ? '<button class="btn-sm dark" id="loadFull">ดูข้อความทั้งหมด</button>' : ''}
+      <button class="btn-sm dark close" id="close">ปิด</button>
+    </div>`;
+}
+
+function renderSync(info) {
+  if (!info.lastSyncAt) { $('sync').innerHTML = '<i class="dot"></i><span>ยังไม่เคย sync</span>'; return; }
+  const when = new Date(info.lastSyncAt).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  $('sync').innerHTML = `<i class="dot ${info.lastSyncOk ? '' : 'bad'}"></i><span>${info.lastSyncOk ? 'Sync ล่าสุด' : 'Sync ล้มเหลว'} ${esc(when)} · ${info.count.toLocaleString()} ไฟล์${info.remaining ? ` (รออ่าน ${info.remaining})` : ''}</span>`;
+}
+
+// ---------- เริ่มต้น ----------
+async function start() {
+  showError('');
+  try {
+    const info = await call('getAppInfo');
+    renderSync(info);
+    state.token = safeSession((s) => s.getItem('sds_token')) || '';
+    if (info.needCode && !state.token) { $('codeForm').hidden = false; $('code').focus(); return; }
+    await boot();
+  } catch (err) {
+    showError('โหลดข้อมูลไม่สำเร็จ: ' + err.message);
+  }
+}
+async function boot() {
+  try {
+    state.docs = prepare(await loadIndex(false));
+  } catch (err) {
+    if (/SESSION_EXPIRED/.test(err.message)) {
+      safeSession((s) => s.removeItem('sds_token'));
+      state.token = '';
+      $('form').hidden = $('hint').hidden = $('app').hidden = true;
+      $('codeForm').hidden = false;
+      showError('หมดเวลาการใช้งาน กรุณาใส่รหัสอีกครั้ง');
+      return;
+    }
+    throw err;
+  }
+  $('codeForm').hidden = true;
+  $('form').hidden = $('hint').hidden = $('app').hidden = false;
+  render();
+  $('q').focus();
+}
+
+$('codeForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  showError('');
+  try {
+    state.token = await call('login', $('code').value);
+    safeSession((s) => s.setItem('sds_token', state.token));
+    await boot();
+  } catch (err) { showError(err.message); }
+});
+
+let timer, logTimer;
+function onQuery(value) {
+  state.q = value.trim();
+  state.limit = PAGE;
+  render();
+  clearTimeout(logTimer);
+  if (state.q.length >= 2) {
+    const q = state.q, n = search().length;
+    logTimer = setTimeout(() => call('logSearch', state.token, q, n).catch(() => {}), 2000);
+  }
+}
+$('q').addEventListener('input', (e) => { clearTimeout(timer); timer = setTimeout(() => onQuery(e.target.value), 150); });
+$('form').addEventListener('submit', (e) => { e.preventDefault(); onQuery($('q').value); });
+document.addEventListener('click', async (e) => {
+  const tab = e.target.closest('.tab'), card = e.target.closest('.card');
+  if (tab) { state.type = tab.dataset.type; state.limit = PAGE; render(); }
+  if (card) { state.selected = card.dataset.id; render(); $('preview').classList.add('open'); }
+  if (e.target.id === 'more') { state.limit += PAGE; render(); }
+  if (e.target.id === 'close') $('preview').classList.remove('open');
+  if (e.target.id === 'loadFull') {
+    const id = state.selected;
+    e.target.disabled = true;
+    e.target.textContent = 'กำลังโหลด…';
+    try { state.fullText[id] = await call('getText', state.token, id); } catch (err) { showError(err.message); }
+    renderPreview(parseQuery(state.q).must);
+  }
+});
+document.addEventListener('change', (e) => { if (e.target.id === 'folder') { state.folder = e.target.value; state.limit = PAGE; render(); } });
+document.addEventListener('keydown', (e) => {
+  if (e.key === '/' && document.activeElement !== $('q') && !$('form').hidden) { e.preventDefault(); $('q').focus(); }
+  if (e.key === 'Escape') $('preview').classList.remove('open');
+});
+start();
+</script>
+</body>
+</html>

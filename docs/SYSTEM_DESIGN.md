@@ -35,7 +35,7 @@
 | **B** | Graph **Delegated permission** — login บัญชี Microsoft ที่เข้าถึงโฟลเดอร์ได้ (เช่น supansa หรือบัญชีกลาง) **ครั้งเดียว** ด้วยไลบรารี [apps-script-oauth2](https://github.com/googleworkspace/apps-script-oauth2) แล้วเก็บ refresh token | ลงทะเบียน App ได้เองถ้า tenant อนุญาต user consent สำหรับ `Files.Read.All` + `offline_access` | ไม่ต้องรอ admin consent · ถ้าบัญชีนั้นเปลี่ยนรหัสผ่าน/ลาออก ต้อง login ใหม่ |
 | **C (สำรอง)** | เจ้าของโฟลเดอร์ **แชร์โฟลเดอร์ให้บัญชีกลาง** (`People you choose`) แล้วใช้วิธี B กับบัญชีกลางนั้น | ไม่ต้องใช้ admin | ไม่ผูกกับบัญชีส่วนตัว |
 
-ทั้ง 3 แบบใช้โค้ดชุดเดียวกัน ต่างกันแค่ฟังก์ชันขอ token (`Auth.gs`)
+ทั้ง 3 แบบใช้โค้ดชุดเดียวกัน ต่างกันแค่ฟังก์ชันขอ token (`graphToken_` ใน `gas/Graph.js`) — ตอนนี้โค้ดรองรับแบบ A (client credentials)
 
 ### 1.2 ระบุโฟลเดอร์ต้นทาง
 Admin ใส่ได้ 2 รูปแบบ ระบบแปลงเป็น `driveId` + `itemId` แล้วเก็บไว้:
@@ -71,14 +71,16 @@ flowchart LR
 
 | ส่วนประกอบ | ไฟล์ | หน้าที่ |
 |---|---|---|
-| Auth | `Auth.gs` | ขอ/แคช access token (แบบ A หรือ B) |
-| Graph client | `Graph.gs` | `graphFetch_` พร้อม retry 429/5xx, resolve ลิงก์, ไล่รายการไฟล์, ดาวน์โหลด |
-| Sync | `Sync.gs` | เทียบรายการไฟล์ใน OneDrive กับ Sheet → ไฟล์ใหม่/เปลี่ยน/ถูกลบ → ใส่คิว |
-| Extract | `Extract.gs` | ดาวน์โหลด → แตกข้อความ → เก็บ `.txt` ใน Drive |
-| Index | `Index.gs` | รวมข้อความ + metadata เป็นไฟล์ index (gzip) |
-| API | `Api.gs` | `getIndexMeta`, `getIndexChunk`, `searchServer`, `getFileLink`, ฟังก์ชัน Admin |
-| Web | `WebApp.gs`, `ui/*.html` | `doGet` + หน้าค้นหา |
-| Setup / Menu | `Setup.gs`, `Menu.gs` | สร้าง Sheet/โฟลเดอร์/trigger, เมนูใน Google Sheet |
+| Config / Repo | `gas/Config.js`, `gas/Repo.js` | โครงสร้างตาราง, ค่าตั้งค่า, normalize ข้อความ, อ่าน/เขียน Sheet เป็นก้อน |
+| Graph client | `gas/Graph.js` | ขอ/แคช token, `graphFetch_` พร้อม retry 429/5xx, resolve โฟลเดอร์, ไล่รายการไฟล์, ดาวน์โหลด |
+| Sync | `gas/Sync.js` | เทียบรายการไฟล์ใน OneDrive กับ Sheet → ไฟล์ใหม่/เปลี่ยน/ย้าย/ถูกลบ → คิว → แตกข้อความ |
+| Extract | `gas/Extract.js` | แปลงเป็นไฟล์ Google ชั่วคราว (OCR สำหรับ PDF) → เก็บ `.txt` ใน Drive |
+| Index | `gas/SearchIndex.js` | รวมข้อความ + metadata เป็น index แบ่งชุด (gzip) ใช้ข้อความเดิมซ้ำถ้าไฟล์ไม่เปลี่ยน |
+| API | `gas/Api.js` | `getAppInfo`, `login`, `getIndexMeta`, `getIndexChunk`, `getText`, `logSearch` |
+| Web | `gas/WebApp.js`, `gas/ui/index.html` | `doGet` + หน้าค้นหา |
+| Setup / Menu | `gas/Setup.js`, `gas/Menu.js` | สร้าง Sheet/โฟลเดอร์/trigger, เมนูและหน้าต่างตั้งค่าใน Google Sheet, ฟังก์ชันทดสอบ |
+
+`npm run build` รวมทุกไฟล์เป็น `dist/Code.gs` + `dist/index.html` + `dist/appsscript.json` สำหรับวางใน Apps Script (ดู [SETUP.md](SETUP.md))
 
 > โค้ดส่วน Graph, Repo (อ่าน/เขียน Sheet เป็นก้อน), เมนู และ build pipeline **นำมาจาก repo `Document_Schematic` ได้เกือบทั้งหมด** — SearchDocSystem ตัดระบบ Revision ออก แล้วเน้นการค้นหาเนื้อหาหลายชนิดไฟล์
 
@@ -106,7 +108,7 @@ sequenceDiagram
 - **cTag** เปลี่ยนเฉพาะเมื่อเนื้อหาไฟล์เปลี่ยน → แตกข้อความใหม่เฉพาะไฟล์ที่จำเป็น
 - รอบปกติ (ไม่มีไฟล์เปลี่ยน) ใช้เวลาไม่กี่วินาที → อยู่ใน quota trigger 90 นาที/วัน สบาย
 - งานค้างเก็บสถานะใน Sheet → รอบถัดไปทำต่อ (GAS รันได้ครั้งละ 6 นาที)
-- ทางเลือกเพิ่ม: ปุ่ม **"Sync ตอนนี้"** ในหน้า Admin
+- สั่ง sync ทันทีได้จากเมนู **"Sync ตอนนี้"** ใน Google Sheet
 
 ---
 
@@ -201,7 +203,7 @@ Graph `POST /search/query` (`entityTypes: ['driveItem']`) ค้นเนื้�
 
 | ส่วน | การออกแบบ |
 |---|---|
-| Top nav (64px, `canvas`) | โลโก้ + "SearchDocSystem", สถานะ sync ล่าสุด (จุด `accent-teal`), ลิงก์ Admin |
+| Top nav (64px, `canvas`) | โลโก้ + "SearchDocSystem", สถานะ sync ล่าสุด (จุด `accent-teal`) |
 | Hero ค้นหา | หัวข้อ serif 400 (Noto Serif Thai แทน Copernicus เพราะต้องรองรับไทย), ช่องค้นหาใหญ่ `text-input` + focus ring coral, ปุ่ม `button-primary` coral |
 | ตัวกรอง | `category-tab` (ทั้งหมด / PDF / Word / Excel / PowerPoint) + dropdown โฟลเดอร์ / ช่วงเวลา |
 | ผลค้นหา | การ์ด `canvas` + hairline, ไอคอนชนิดไฟล์, ชื่อไฟล์ (`title-md`), path (`caption` muted), snippet + `<mark>` สี amber อ่อน, `badge-pill` วันที่แก้ไข/ผู้แก้ไข, ปุ่ม "เปิดใน OneDrive" |
@@ -228,11 +230,12 @@ Responsive: < 768px ตัวกรองเลื่อนแนวนอน, �
 | ฟังก์ชัน | คืนค่า |
 |---|---|
 | `getIndexMeta(token)` | `{ version, builtAt, fileCount, chunks }` |
-| `getIndexChunk(token, n)` | base64 ของ gzip JSON `[{id,n,e,p,s,m,b,u,t}]` (name, ext, path, size, modified, by, webUrl, text) |
-| `searchServer(token, q, filters)` | โหมดสำรอง → `[{id, score, snippet}]` |
+| `getIndexChunk(token, version, n, plain)` | base64 ของ gzip JSON `[{id,n,e,p,s,m,b,u,t}]` (name, ext, path, size, modified, by, webUrl, text) |
 | `getText(token, fileId)` | ข้อความเต็มสำหรับแผงพรีวิว |
 | `logSearch(q, count)` | บันทึกสถิติคำค้น |
-| `adminStatus(pw)` / `adminSyncNow(pw)` / `adminAddSource(pw, input)` / `adminRemoveSource(pw, id)` / `adminReindex(pw, fileId)` | งาน Admin |
+| `getAppInfo()` / `login(code)` | สถานะ sync + ต้องใช้รหัสเข้าเว็บหรือไม่ / แลกรหัสเป็น token |
+
+งานผู้ดูแล (ติดตั้ง, ตั้งค่า, sync, ทดสอบ) ทำผ่านเมนูใน Google Sheet และป้องกันไม่ให้เรียกจากหน้าเว็บด้วย `requireOwner_()`
 
 `token` = session token ที่ได้หลังใส่รหัสเข้าเว็บ (เก็บใน `CacheService` 6 ชม.)
 
@@ -265,9 +268,9 @@ Responsive: < 768px ตัวกรองเลื่อนแนวนอน, �
 
 | Phase | งาน | ผลลัพธ์ |
 |---|---|---|
-| **0. ทดสอบการเชื่อมต่อ** | ขอ App จาก IT (แบบ A) หรือสร้างเอง (แบบ B) → `testGraphConnection()` resolve ลิงก์/owner:path แล้ว list ไฟล์ → `testExtract()` กับ PDF ไทย 1 ไฟล์ | รู้ว่าเข้าถึงโฟลเดอร์ได้ และ OCR ไทยได้ผล |
-| **1. MVP ค้นชื่อไฟล์** | Setup, Sync ทุก 30 นาที, index ชื่อ/path, หน้าค้นหา + ตัวกรอง + เปิดใน OneDrive | ใช้งานได้ทันทีโดยยังไม่แตกเนื้อหา |
-| **2. ค้นเนื้อหา** | Extract PDF/Word/Excel/PowerPoint, index แบบ chunk + IndexedDB cache, snippet + highlight, พรีวิว | ค้นจากเนื้อหาภาษาไทยได้ |
+| **0. ทดสอบการเชื่อมต่อ** ✅ โค้ดพร้อม (รอค่าจาก IT) | ขอ App จาก IT (แบบ A) หรือสร้างเอง (แบบ B) → `testGraphConnection()` resolve ลิงก์/owner:path แล้ว list ไฟล์ → `testExtract()` กับ PDF ไทย 1 ไฟล์ | รู้ว่าเข้าถึงโฟลเดอร์ได้ และ OCR ไทยได้ผล |
+| **1. MVP ค้นชื่อไฟล์** ✅ โค้ดพร้อม | Setup, Sync ทุก 30 นาที, index ชื่อ/path, หน้าค้นหา + ตัวกรอง + เปิดใน OneDrive | ใช้งานได้ทันทีโดยยังไม่แตกเนื้อหา |
+| **2. ค้นเนื้อหา** ✅ โค้ดพร้อม | Extract PDF/Word/Excel/PowerPoint, index แบบ chunk + IndexedDB cache, snippet + highlight, พรีวิว | ค้นจากเนื้อหาภาษาไทยได้ |
 | **3. ขยาย** | PDF ยาว > 10 หน้า (pdf-lib), OCR รูป, ค้นฝั่ง server, หน้า Admin เต็ม, สถิติคำค้น | รองรับเอกสารจำนวนมาก |
 | **4. ทางเลือก** | Login ด้วย Microsoft (MSAL) + หน้าเว็บบน GitHub Pages, แจ้งเตือนไฟล์ใหม่เข้า Teams | ปลอดภัยและสะดวกขึ้น |
 

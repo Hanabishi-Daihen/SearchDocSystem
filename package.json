@@ -1,0 +1,10 @@
+{
+  "name": "searchdocsystem",
+  "private": true,
+  "description": "ค้นหาเอกสารจาก OneDrive องค์กร บน Google Apps Script",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "test": "node --test \"tests/*.test.js\"",
+    "push": "npm run build && clasp push"
+  }
+}

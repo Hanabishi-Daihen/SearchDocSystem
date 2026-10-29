@@ -162,3 +162,26 @@ test('ตั้งค่า: ช่องว่างใช้ค่าเดิ
   g.run('syncNow()');
   assert.strictEqual(g.props.get('SOURCE_RESOLVED_FROM'), 'user@daihen.co.th:/Documents/QA');
 });
+
+test('OneDrive: ใช้ URL จากแถบที่อยู่ของ browser (shared?listurl=…&id=…) เป็นแหล่งเอกสารได้', () => {
+  const g = install();
+  g.props.set('SOURCE', 'https://daihenelectric-my.sharepoint.com/shared?listurl=https%3A%2F%2Fdaihenelectric%2Dmy%2Esharepoint%2Ecom%2Fpersonal%2Fsupansa%5Fdaihen%5Fco%5Fth%2FDocuments&id=%2Fpersonal%2Fsupansa%5Fdaihen%5Fco%5Fth%2FDocuments%2FOrder%20Spec%20Control&shareLink=1&ga=1');
+  assert.strictEqual(g.run('getSourceKind_()'), 'onedrive');
+  assert.match(g.run('testConnection()'), /เปิดโฟลเดอร์ OneDrive ได้/);
+  const reqs = g.onedrive.requests.join('\n');
+  assert.match(reqs, /\/sites\/daihenelectric-my\.sharepoint\.com:\/personal\/supansa_daihen_co_th\?/);
+  assert.match(reqs, /\/drives\/DRIVE\/root:\/Order%20Spec%20Control\?/, 'เลือก library Documents ไม่ใช่ library อื่น');
+  assert.doesNotMatch(reqs, /\/shares\//, 'URL จาก browser ไม่ใช่ลิงก์แชร์');
+  assert.strictEqual(g.run('syncNow()').total, 6);
+});
+
+test('OneDrive: URL จาก browser ที่ไม่มี listurl และรูปแบบ อีเมล:/Documents/… ก็ใช้ได้', () => {
+  const g = install();
+  g.props.set('SOURCE', 'https://daihenelectric-my.sharepoint.com/my?id=%2Fpersonal%2Fsupansa%5Fdaihen%5Fco%5Fth%2FDocuments%2FOrder%20Spec%20Control');
+  assert.match(g.run('testConnection()'), /เปิดโฟลเดอร์ OneDrive ได้/);
+
+  const h = install();
+  h.props.set('SOURCE', 'supansa@daihen.co.th:/Documents/Order Spec Control');
+  assert.match(h.run('testConnection()'), /เปิดโฟลเดอร์ OneDrive ได้/);
+  assert.match(h.onedrive.requests.join('\n'), /root:\/Order%20Spec%20Control\?/, 'ตัด Documents/ ออกแล้วลองใหม่');
+});

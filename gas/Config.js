@@ -4,7 +4,8 @@
  * Script Properties (ตั้งผ่านเมนู "SearchDocSystem → 2. ตั้งค่า" ใน Google Sheet — ห้ามเขียนลงโค้ด):
  *   SOURCE             แหล่งเอกสาร (ดู Source.js):
  *                        ลิงก์โฟลเดอร์ Google Drive หรือ ID ของโฟลเดอร์ — ไม่ต้องใช้ค่าอื่นเพิ่ม
- *                        ลิงก์แชร์ OneDrive หรือ อีเมลเจ้าของ:/path — ต้องใช้ TENANT_ID, CLIENT_ID, CLIENT_SECRET ด้วย
+ *                        ลิงก์แชร์ OneDrive, URL จาก browser (id=/personal/...) หรือ อีเมลเจ้าของ:/path
+ *                        — ต้องใช้ TENANT_ID, CLIENT_ID, CLIENT_SECRET ด้วย (Graph.js)
  *   TENANT_ID, CLIENT_ID, CLIENT_SECRET   App ใน Microsoft Entra ID (เฉพาะ OneDrive)
  *   SITE_PASSWORD      (ไม่บังคับ) รหัสเข้าหน้าเว็บค้นหา — เว้นว่าง = ใครมีลิงก์เว็บก็ค้นได้
  *   SPREADSHEET_ID, DRIVE_ROOT_ID, TEXT_FOLDER_ID, INDEX_FOLDER_ID, TMP_FOLDER_ID,

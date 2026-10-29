@@ -2,7 +2,7 @@
  * แหล่งเอกสาร — ระบบดูจากค่า SOURCE เองว่าเป็นแบบไหน
  *   Google Drive : ลิงก์โฟลเดอร์ https://drive.google.com/drive/folders/<ID> หรือ ID ของโฟลเดอร์
  *                  อ่านด้วยสิทธิ์ของบัญชีที่ติดตั้ง Script ไม่ต้องใช้ App จาก IT
- *   OneDrive     : ลิงก์แชร์ OneDrive หรือ อีเมล:/path — ต้องมี App ใน Entra ID (Graph.js)
+ *   OneDrive     : ลิงก์แชร์ OneDrive, URL จาก browser หรือ อีเมล:/path — ต้องมี App ใน Entra ID (Graph.js)
  *
  * ทุกแบบคืนรายการไฟล์ในรูปแบบเดียวกัน:
  *   { id, name, ext, path, size, modified, modifiedBy, webUrl, changeKey }

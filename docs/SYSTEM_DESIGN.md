@@ -38,13 +38,16 @@
 ทั้ง 3 แบบใช้โค้ดชุดเดียวกัน ต่างกันแค่ฟังก์ชันขอ token (`graphToken_` ใน `gas/Graph.js`) — ตอนนี้โค้ดรองรับแบบ A (client credentials)
 
 ### 1.2 ระบุโฟลเดอร์ต้นทาง
-Admin ใส่ได้ 2 รูปแบบ ระบบแปลงเป็น `driveId` + `itemId` แล้วเก็บไว้:
+Admin ใส่ได้ 3 รูปแบบ ระบบแปลงเป็น `driveId` + `itemId` แล้วเก็บไว้ (ทุกแบบต้องใช้ token ของ App):
 
 ```
-1) ลิงก์แชร์:   https://daihenelectric-my.sharepoint.com/:f:/g/personal/supansa_daihen_co_th/IgBQ...
-               → GET /shares/u!{base64url(link)}/driveItem   (ใช้ token ของ App / ผู้ใช้ในองค์กร)
-2) owner:path:  supansa@daihen.co.th:/Documents/<ชื่อโฟลเดอร์>
-               → GET /users/{upn}/drive/root:/{path}
+1) ลิงก์แชร์:      https://daihenelectric-my.sharepoint.com/:f:/g/personal/supansa_daihen_co_th/IgBQ...
+                  → GET /shares/u!{base64url(link)}/driveItem
+2) URL จาก browser: https://daihenelectric-my.sharepoint.com/shared?listurl=…/Documents&id=/personal/…/Documents/Order Spec Control
+                  → GET /sites/{host}:/personal/{user} → /sites/{id}/drives (หา library ตาม listurl)
+                  → GET /drives/{driveId}/root:/Order Spec Control
+3) owner:path:     supansa@daihen.co.th:/Order Spec Control   (path นับจาก "My files" — "Documents" คือตัว drive)
+                  → GET /users/{upn}/drive/root:/{path}
 ```
 > ลิงก์แบบมีรหัสผ่านอาจ resolve ผ่าน `/shares` ไม่ได้แม้ใช้ token ขององค์กร **ต้องทดสอบใน Phase 0** — ถ้าไม่ได้ ใช้รูปแบบที่ 2 (ทราบได้จาก URL: owner = `supansa_daihen_co_th` → `supansa@daihen.co.th`)
 

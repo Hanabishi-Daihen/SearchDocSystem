@@ -10,7 +10,8 @@
  * Script Properties (ตั้งผ่านเมนู "SearchDocSystem → 2. ตั้งค่า" ใน Google Sheet — ห้ามเขียนลงโค้ด):
  *   SOURCE             แหล่งเอกสาร (ดู Source.js):
  *                        ลิงก์โฟลเดอร์ Google Drive หรือ ID ของโฟลเดอร์ — ไม่ต้องใช้ค่าอื่นเพิ่ม
- *                        ลิงก์แชร์ OneDrive หรือ อีเมลเจ้าของ:/path — ต้องใช้ TENANT_ID, CLIENT_ID, CLIENT_SECRET ด้วย
+ *                        ลิงก์แชร์ OneDrive, URL จาก browser (id=/personal/...) หรือ อีเมลเจ้าของ:/path
+ *                        — ต้องใช้ TENANT_ID, CLIENT_ID, CLIENT_SECRET ด้วย (Graph.js)
  *   TENANT_ID, CLIENT_ID, CLIENT_SECRET   App ใน Microsoft Entra ID (เฉพาะ OneDrive)
  *   SITE_PASSWORD      (ไม่บังคับ) รหัสเข้าหน้าเว็บค้นหา — เว้นว่าง = ใครมีลิงก์เว็บก็ค้นได้
  *   SPREADSHEET_ID, DRIVE_ROOT_ID, TEXT_FOLDER_ID, INDEX_FOLDER_ID, TMP_FOLDER_ID,
@@ -220,7 +221,7 @@ function appendRows_(sheet, rows, keep) {
  * แหล่งเอกสาร — ระบบดูจากค่า SOURCE เองว่าเป็นแบบไหน
  *   Google Drive : ลิงก์โฟลเดอร์ https://drive.google.com/drive/folders/<ID> หรือ ID ของโฟลเดอร์
  *                  อ่านด้วยสิทธิ์ของบัญชีที่ติดตั้ง Script ไม่ต้องใช้ App จาก IT
- *   OneDrive     : ลิงก์แชร์ OneDrive หรือ อีเมล:/path — ต้องมี App ใน Entra ID (Graph.js)
+ *   OneDrive     : ลิงก์แชร์ OneDrive, URL จาก browser หรือ อีเมล:/path — ต้องมี App ใน Entra ID (Graph.js)
  *
  * ทุกแบบคืนรายการไฟล์ในรูปแบบเดียวกัน:
  *   { id, name, ext, path, size, modified, modifiedBy, webUrl, changeKey }
@@ -431,15 +432,19 @@ function graphJson_(pathOrUrl) {
 }
 
 /**
- * แปลงค่า SOURCE เป็นโฟลเดอร์ใน OneDrive รองรับ 2 แบบ
- *   1) ลิงก์แชร์ OneDrive/SharePoint
- *   2) "อีเมลเจ้าของ:/path/โฟลเดอร์" เช่น user@daihen.co.th:/Documents/QA (ใช้เมื่อเปิดผ่านลิงก์ไม่ได้)
+ * แปลงค่า SOURCE เป็นโฟลเดอร์ใน OneDrive รองรับ 3 แบบ
+ *   1) ลิงก์แชร์ OneDrive/SharePoint  https://x-my.sharepoint.com/:f:/g/personal/...
+ *   2) URL จากแถบที่อยู่ของ browser ตอนเปิดโฟลเดอร์ (มี id=/personal/.../Documents/โฟลเดอร์)
+ *   3) "อีเมลเจ้าของ:/path/โฟลเดอร์" เช่น user@daihen.co.th:/QA — path นับจาก "My files" (ไม่ต้องใส่ Documents)
  */
 function resolveSource_(input) {
   input = String(input || '').trim();
   if (!input) throw new Error('ยังไม่ได้ตั้งค่าโฟลเดอร์ OneDrive (เมนู 2. ตั้งค่า)');
   let item;
-  if (/^https?:\/\//i.test(input)) {
+  const browse = /^https?:\/\//i.test(input) && !/\/:[a-z]:\//i.test(input) && input.match(/[?&]id=([^&#]+)/);
+  if (browse) {
+    item = resolveBrowserUrl_(input, decodeURIComponent(browse[1].replace(/\+/g, ' ')));
+  } else if (/^https?:\/\//i.test(input)) {
     const encoded = 'u!' + Utilities.base64EncodeWebSafe(input, Utilities.Charset.UTF_8).replace(/=+$/, '');
     item = graphJson_(`/shares/${encoded}/driveItem?$select=${ITEM_SELECT}`);
   } else {
@@ -447,12 +452,54 @@ function resolveSource_(input) {
     if (!m) throw new Error('รูปแบบโฟลเดอร์ไม่ถูกต้อง: ใส่ลิงก์ OneDrive หรือ อีเมล:/path/โฟลเดอร์');
     const path = m[2].replace(/^\/+|\/+$/g, '');
     const upn = encodeURIComponent(m[1]);
-    item = graphJson_(path
-      ? `/users/${upn}/drive/root:/${path.split('/').map(encodeURIComponent).join('/')}?$select=${ITEM_SELECT}`
+    const byPath = (p) => graphJson_(p
+      ? `/users/${upn}/drive/root:/${encodePath_(p)}?$select=${ITEM_SELECT}`
       : `/users/${upn}/drive/root?$select=${ITEM_SELECT}`);
+    try {
+      item = byPath(path);
+    } catch (err) {
+      // "Documents" คือตัว drive เอง — ถ้าผู้ใช้ใส่มาด้วยแล้วหาไม่เจอ ลองตัดออก
+      if (!/^Graph 404/.test(err.message) || !/^Documents(\/|$)/i.test(path)) throw err;
+      item = byPath(path.replace(/^Documents\/?/i, ''));
+    }
   }
   if (!item.folder) throw new Error(`"${item.name}" ไม่ใช่โฟลเดอร์`);
   return { driveId: item.parentReference && item.parentReference.driveId, itemId: item.id, name: item.name };
+}
+
+/**
+ * URL จาก browser: id=/personal/user_co_th/Documents/โฟลเดอร์ (และ listurl=ที่อยู่ของ library ถ้ามี)
+ * → หา site → หา drive (library) ที่ตรงกัน → หาโฟลเดอร์ตาม path ใน drive
+ */
+function resolveBrowserUrl_(url, serverPath) {
+  const host = url.match(/^https?:\/\/([^/?#]+)/i)[1];
+  serverPath = '/' + serverPath.replace(/^\/+|\/+$/g, '');
+  const listUrlParam = url.match(/[?&]listurl=([^&#]+)/i);
+  let libraryPath;
+  if (listUrlParam) {
+    libraryPath = decodeURIComponent(listUrlParam[1]).replace(/^https?:\/\/[^/]+/i, '').replace(/\/+$/, '');
+  } else {
+    const m = serverPath.match(/^\/(?:personal|sites|teams)\/[^/]+\/[^/]+/i);
+    if (!m) throw new Error(`อ่าน path ของโฟลเดอร์จากลิงก์ไม่ได้: ${serverPath}`);
+    libraryPath = m[0];
+  }
+  if (serverPath.toLowerCase().indexOf(libraryPath.toLowerCase()) !== 0) {
+    throw new Error('ลิงก์ไม่ถูกรูปแบบ: path ของโฟลเดอร์ไม่อยู่ใน library ที่ระบุ');
+  }
+  const sitePath = libraryPath.replace(/\/[^/]+$/, '');
+  const site = graphJson_(`/sites/${host}:${encodePath_(sitePath)}?$select=id`);
+  const norm = (u) => decodeURIComponent(String(u || '')).replace(/^https?:\/\/[^/]+/i, '').replace(/\/+$/, '').toLowerCase();
+  const drives = graphJson_(`/sites/${site.id}/drives?$select=id,name,webUrl`).value || [];
+  const drive = drives.find((d) => norm(d.webUrl) === libraryPath.toLowerCase());
+  if (!drive) throw new Error(`ไม่พบ library "${libraryPath}" ในไซต์ — ตรวจสอบลิงก์`);
+  const rel = serverPath.slice(libraryPath.length).replace(/^\/+/, '');
+  return graphJson_(rel
+    ? `/drives/${drive.id}/root:/${encodePath_(rel)}?$select=${ITEM_SELECT}`
+    : `/drives/${drive.id}/root?$select=${ITEM_SELECT}`);
+}
+
+function encodePath_(path) {
+  return path.split('/').map((p) => (p ? encodeURIComponent(p) : p)).join('/');
 }
 
 /** โฟลเดอร์ต้นทางที่ resolve แล้ว (เก็บไว้ใน Script Properties ไม่ต้อง resolve ทุกรอบ) */

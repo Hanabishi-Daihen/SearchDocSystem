@@ -85,7 +85,7 @@ class FakeSpreadsheet {
 
 /** OneDrive จำลอง: โฟลเดอร์ root เดียว + โฟลเดอร์ย่อยได้ */
 class FakeOneDrive {
-  constructor() { this.items = new Map(); this.add({ id: 'ROOT', name: 'Docs', folder: true, parent: null }); this.downloads = 0; }
+  constructor() { this.items = new Map(); this.add({ id: 'ROOT', name: 'Docs', folder: true, parent: null }); this.downloads = 0; this.requests = []; }
   add({ id, name, folder = false, parent = 'ROOT', content = '', modified = '2026-10-01T00:00:00Z', size }) {
     this.items.set(id, { id, name, folder, parent, content, modified, ctag: 'c1', ver: 1, size });
   }
@@ -116,7 +116,26 @@ class FakeOneDrive {
   handle(url) {
     let m;
     if (url.includes('login.microsoftonline.com')) return { code: 200, body: { access_token: 'tok', expires_in: 3600 } };
-    if (url.includes('/shares/') || url.includes('/users/')) return { code: 200, body: this.toJson(this.items.get('ROOT')) };
+    this.requests.push(url);
+    const notFound = { code: 404, body: { error: { message: 'itemNotFound' } } };
+    if (url.includes('/shares/')) return { code: 200, body: this.toJson(this.items.get('ROOT')) };
+    if (url.includes('/users/')) {
+      // "Documents" คือตัว drive — path ที่ขึ้นต้นด้วย Documents/ จึงหาไม่เจอ (เหมือน Graph จริง)
+      return /root:\/Documents(\/|\?|$)/.test(url) ? notFound : { code: 200, body: this.toJson(this.items.get('ROOT')) };
+    }
+    // URL จาก browser: /sites/{host}:{path} → /sites/{id}/drives → /drives/{id}/root:/{path}
+    if ((m = url.match(/\/sites\/([^/:]+):(\/[^?]+)/))) {
+      return m[2] === '/personal/supansa_daihen_co_th' ? { code: 200, body: { id: 'SITE1' } } : notFound;
+    }
+    if (url.includes('/sites/SITE1/drives')) {
+      return { code: 200, body: { value: [
+        { id: 'PRESERVATION', name: 'Preservation Hold Library', webUrl: 'https://daihenelectric-my.sharepoint.com/personal/supansa_daihen_co_th/PreservationHoldLibrary' },
+        { id: 'DRIVE', name: 'OneDrive', webUrl: 'https://daihenelectric-my.sharepoint.com/personal/supansa_daihen_co_th/Documents' },
+      ] } };
+    }
+    if ((m = url.match(/\/drives\/DRIVE\/root:\/([^?]+)/))) {
+      return decodeURIComponent(m[1]) === 'Order Spec Control' ? { code: 200, body: this.toJson(this.items.get('ROOT')) } : notFound;
+    }
     if ((m = url.match(/\/items\/([^/?]+)\/children/))) {
       const value = [...this.items.values()].filter((i) => i.parent === m[1]).map((i) => this.toJson(i));
       return { code: 200, body: { value } };
